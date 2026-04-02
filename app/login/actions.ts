@@ -1,10 +1,8 @@
 'use server'
 
-export const runtime = 'edge' // <--- AGREGA ESTA LÍNEA AQUÍ TAMBIÉN
-
 import { createClient } from '../../utils/supabase/server'
 import { redirect } from 'next/navigation'
-import { revalidatePath } from 'next/cache' // <--- AGREGA ESTA LÍNEA
+import { revalidatePath } from 'next/cache'
 
 export async function login(formData: FormData) {
   const supabase = await createClient()
@@ -18,11 +16,9 @@ export async function login(formData: FormData) {
   })
 
   if (error) {
-    // Si hay error, volvemos al login con un mensaje
     return redirect('/login?message=Credenciales incorrectas')
   }
 
-  // Limpiamos caché y redirigimos
   revalidatePath('/', 'layout')
   return redirect('/dashboard')
 }

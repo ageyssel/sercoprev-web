@@ -1,4 +1,5 @@
-export const runtime = 'edge' // <--- AGREGA ESTA LÍNEA
+// app/login/page.tsx
+export const runtime = 'edge' // <--- Aquí SÍ se queda
 import { login } from './actions'
 
 export default async function LoginPage({
