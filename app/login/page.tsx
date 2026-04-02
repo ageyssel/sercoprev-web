@@ -1,5 +1,5 @@
 import { login } from './actions'
-import { SubmitButton } from '../components/SubmitButton'
+import { SubmitButton } from '@/app/admin/components/SubmitButton'
 import Image from 'next/image'
 import Link from 'next/link'
 
