@@ -1,76 +1,65 @@
-// app/login/page.tsx
-export const runtime = 'edge' // <--- Aquí SÍ se queda
 import { login } from './actions'
+import { SubmitButton } from '../components/SubmitButton'
+import Image from 'next/image'
+import Link from 'next/link'
 
-export default async function LoginPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ message: string }>
-}) {
-  const params = await searchParams;
-
+export default async function LoginPage(props: { searchParams: Promise<{ message: string }> }) {
+  const searchParams = await props.searchParams;
+  
   return (
-    <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-4">
-      <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 space-y-8 border border-gray-200">
-        
-        <div className="text-center">
-          <h2 className="text-3xl font-extrabold text-[#0f172a]">Acceso Clientes</h2>
-          <p className="text-gray-500 mt-2 text-sm">
-            Ingrese sus credenciales para revisar la información de su empresa.
-          </p>
+    <div className="min-h-screen bg-[#fafafa] flex flex-col items-center justify-center p-4 font-sans">
+      
+      <div className="mb-8">
+        <Link href="/">
+          <div className="relative h-16 w-56 hover:scale-105 transition-transform">
+            <Image src="/logo.png" alt="SERCOPREV Logo" fill className="object-contain" priority />
+          </div>
+        </Link>
+      </div>
+
+      <div className="max-w-md w-full bg-white rounded-xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] p-10 space-y-8 border border-gray-100">
+        <div className="text-center border-b border-gray-100 pb-6">
+          <h2 className="text-3xl font-black text-[#0f172a] tracking-tight">Acceso Portal</h2>
+          <p className="text-gray-500 mt-2 text-sm font-medium">Ingrese sus credenciales de cliente</p>
         </div>
         
         <form className="space-y-6" action={login}>
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">
-              Correo Electrónico
-            </label>
+            <label className="block text-sm font-bold text-[#0f172a] mb-2 uppercase tracking-wide">Correo Electrónico</label>
             <input 
-             name="email" 
-             type="email" 
-             required 
-             className="w-full px-4 py-3 rounded-lg border border-gray-300 outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 placeholder-gray-500 bg-white" 
-             placeholder="cliente@correo.cl" 
+             name="email" type="email" required 
+             className="w-full px-4 py-3 rounded-md border border-gray-300 outline-none focus:ring-2 focus:ring-[#1e3a8a] text-gray-900 bg-gray-50 transition-all" 
+             placeholder="cliente@empresa.cl" 
            />
           </div>
-          
           <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-2">
-              Contraseña
-            </label>
+            <label className="block text-sm font-bold text-[#0f172a] mb-2 uppercase tracking-wide">Contraseña</label>
             <input 
-              name="password"
-              type="password" 
-              required
-              className="w-full px-4 py-3 rounded-lg border border-gray-300 outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 placeholder-gray-500 bg-white" 
-             placeholder="••••••••"
+              name="password" type="password" required
+              className="w-full px-4 py-3 rounded-md border border-gray-300 outline-none focus:ring-2 focus:ring-[#1e3a8a] text-gray-900 bg-gray-50 transition-all" 
+              placeholder="••••••••"
             />
           </div>
 
-          {/* Aquí mostramos el error si las credenciales fallan */}
-          {params?.message && (
-            <p className="text-red-500 text-sm text-center font-medium bg-red-50 p-2 rounded">
-              {params.message}
-            </p>
+          {searchParams?.message && (
+            <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-md">
+              <p className="text-red-700 text-sm font-bold">{searchParams.message}</p>
+            </div>
           )}
           
-          <button 
-            type="submit"
-            className="w-full bg-[#1d4ed8] hover:bg-[#1e40af] text-white font-bold py-3 px-4 rounded-lg transition-all duration-300 shadow-md"
-          >
-            Ingresar al Portal
-          </button>
+          <SubmitButton 
+            text="Ingresar a mi Cuenta" 
+            loadingText="Verificando..." 
+            className="w-full bg-[#eab308] hover:bg-yellow-500 text-[#0f172a] font-black py-4 rounded-md transition-all shadow-md text-lg tracking-wide"
+          />
         </form>
         
-        <div className="text-center pt-4">
-          <a href="/" className="text-sm text-gray-500 hover:text-[#1d4ed8] font-medium transition-colors">
-            ← Volver a la página principal
-          </a>
+        <div className="text-center pt-2">
+          <Link href="/" className="text-sm text-gray-400 hover:text-[#1e3a8a] font-bold transition-colors">
+            &larr; Volver a la página principal
+          </Link>
         </div>
       </div>
-      <footer className="mt-12 text-center text-gray-400 text-xs">
-        <p>© 2026 FocusFrame Media SpA.</p>
-      </footer>
     </div>
   );
 }

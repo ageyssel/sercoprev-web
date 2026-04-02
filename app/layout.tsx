@@ -10,7 +10,7 @@ export const metadata: Metadata = {
   title: "SERCOPREV - Contabilidad y Gestión",
   description: "Su Partner Estratégico en el Camino al Éxito. Más de 30 años impulsando Pymes.",
   icons: {
-    icon: '/logo.png', // Esto fuerza el uso de tu imagen public/logo.png
+    icon: '/favicon.ico', // Esto fuerza el uso de tu imagen public/logo.png
     shortcut: '/logo.png',
     apple: '/logo.png',
   },
