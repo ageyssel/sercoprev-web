@@ -1,0 +1,60 @@
+{
+  "node": {},
+  "edge": {
+    "0041871c7e54c0df1933d256c40e1d8065f90460fb": {
+      "workers": {
+        "app/admin/page": {
+          "moduleId": 55108,
+          "async": false,
+          "exportedName": "signOut",
+          "filename": "app/dashboard/actions.ts"
+        },
+        "app/dashboard/page": {
+          "moduleId": 28350,
+          "async": false,
+          "exportedName": "signOut",
+          "filename": "app/dashboard/actions.ts"
+        }
+      },
+      "filename": "app/dashboard/actions.ts",
+      "exportedName": "signOut"
+    },
+    "40c66d5a4141a47a0cbba27546963609343a6f8c18": {
+      "workers": {
+        "app/admin/page": {
+          "moduleId": 55108,
+          "async": false,
+          "exportedName": "crearCliente",
+          "filename": "app/admin/actions.ts"
+        }
+      },
+      "filename": "app/admin/actions.ts",
+      "exportedName": "crearCliente"
+    },
+    "40e2baf1a054981dacf5c08f28f0dd156f796d6cb3": {
+      "workers": {
+        "app/admin/page": {
+          "moduleId": 55108,
+          "async": false,
+          "exportedName": "subirDocumento",
+          "filename": "app/admin/actions.ts"
+        }
+      },
+      "filename": "app/admin/actions.ts",
+      "exportedName": "subirDocumento"
+    },
+    "4063522d9309dd19504f266c19dd34bd5ca8be466d": {
+      "workers": {
+        "app/login/page": {
+          "moduleId": 46137,
+          "async": false,
+          "exportedName": "login",
+          "filename": "app/login/actions.ts"
+        }
+      },
+      "filename": "app/login/actions.ts",
+      "exportedName": "login"
+    }
+  },
+  "encryptionKey": "n9ZRqSAOJTWrhex8chLRnX/Gue5Ae8zLMWwWxtbJSUw="
+}

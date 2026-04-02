@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "functions": {
+    "/": {},
+    "/admin": {},
+    "/dashboard": {},
+    "/login": {}
+  }
+}
