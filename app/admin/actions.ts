@@ -43,29 +43,3 @@ export async function crearCliente(formData: FormData) {
 
   revalidatePath('/admin')
 }
-
-export async function subirDocumento(formData: FormData) {
-  const supabaseAdmin = getAdminClient() // Se activa solo al ejecutar la acción
-  
-  const empresa_id = formData.get('empresa_id') as string
-  const categoria = formData.get('categoria') as string
-  const file = formData.get('archivo') as File
-  
-  if (!file) return
-
-  const safeName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_')}`
-
-  const { error: uploadError } = await supabaseAdmin.storage
-    .from('documentos')
-    .upload(safeName, file, { upsert: true })
-
-  if (uploadError) throw new Error(uploadError.message)
-
-  await supabaseAdmin.from('documentos').insert({
-    empresa_id,
-    nombre: safeName,
-    categoria
-  })
-
-  revalidatePath('/admin')
-}

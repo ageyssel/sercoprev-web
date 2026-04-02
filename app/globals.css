@@ -1,30 +1,31 @@
 @import "tailwindcss";
 
+/* 1. CONFIGURACIÓN DEL TEMA CORPORATIVO (Tailwind v4) */
+@theme {
+  /* Colores SERCOPREV extraídos del perfil institucional */
+  --color-primary: #1d4ed8;    /* Azul confianza para botones y enlaces [cite: 19, 28] */
+  --color-accent: #eab308;     /* Amarillo/Dorado para estrellas y resaltados [cite: 11, 58] */
+  --color-navy: #0f172a;       /* Azul oscuro para footers y encabezados [cite: 11, 13] */
+  --color-background: #f8fafc; /* Gris ultra claro para limpieza visual [cite: 15, 18] */
+  
+  /* Fuentes optimizadas */
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+}
+
+/* 2. ESTILOS BASE */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --background: #f8fafc;
+  --foreground: #0f172a;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+  overflow-x: hidden; /* Evita scroll horizontal por las animaciones */
 }
-/* Animación de entrada suave */
+
+/* 3. ANIMACIONES DE ENTRADA (Fade In Up) */
 @keyframes fadeInUp {
   from {
     opacity: 0;
@@ -37,14 +38,15 @@ body {
 }
 
 .animate-fade-in {
-  animation: fadeInUp 0.8s ease-out forwards;
-  opacity: 0; /* Empieza invisible */
+  animation: fadeInUp 0.6s ease-out forwards;
+  opacity: 0;
 }
 
-/* Retrasos para que aparezcan en cascada */
 .delay-100 { animation-delay: 100ms; }
 .delay-200 { animation-delay: 200ms; }
 .delay-300 { animation-delay: 300ms; }
+
+/* 4. CINTA DE TESTIMONIOS (Marquee Infinito) */
 @keyframes marquee {
   0% { transform: translateX(0); }
   100% { transform: translateX(-50%); }
@@ -62,7 +64,15 @@ body {
   animation: marquee 35s linear infinite reverse;
 }
 
+/* 5. OPTIMIZACIÓN DE INTERACCIÓN */
 .pause-on-hover:hover .animate-marquee,
 .pause-on-hover:hover .animate-marquee-reverse {
   animation-play-state: paused;
+}
+
+/* Mejora de velocidad: Suavizado de renderizado */
+* {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  scroll-behavior: smooth;
 }
