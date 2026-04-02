@@ -1,12 +1,9 @@
 import Link from 'next/link'
-import { Star, MessageCircle, ShieldCheck, UserCheck, Gavel, FileText } from 'lucide-react'
-
-export const runtime = 'edge'
+import { Star, MessageCircle, ChevronRight, ShieldCheck, UserCheck, Gavel, FileText } from 'lucide-react'
 
 export default function HomePage() {
   return (
     <div className="min-h-screen bg-white text-[#0f172a] font-sans">
-      {/* NAVBAR */}
       <nav className="fixed w-full z-50 bg-white/95 backdrop-blur-sm border-b border-gray-100 px-6 py-4">
         <div className="max-w-7xl mx-auto flex justify-between items-center">
           <div className="flex items-center gap-2">
@@ -19,7 +16,6 @@ export default function HomePage() {
         </div>
       </nav>
 
-      {/* HERO */}
       <section className="pt-32 pb-20 px-6 bg-gradient-to-b from-blue-50 to-white">
         <div className="max-w-7xl mx-auto text-center">
           <h1 className="text-4xl md:text-6xl font-black mb-6 leading-tight">
@@ -36,12 +32,12 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* SERVICIOS */}
       <section className="py-20 px-6 max-w-7xl mx-auto">
         <div className="text-center mb-16">
           <h2 className="text-3xl font-black uppercase tracking-tight mb-4">Conozca nuestros servicios</h2>
           <p className="text-gray-500">Soluciones integrales para las necesidades administrativas y legales de su empresa.</p>
         </div>
+        
         <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
           <div className="p-6 bg-gray-50 rounded-2xl border border-gray-100">
             <ShieldCheck className="text-[#1d4ed8] mb-4" />
@@ -82,10 +78,9 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* TESTIMONIOS */}
       <section className="bg-[#0f172a] py-20 overflow-hidden">
         <h2 className="text-center text-2xl font-bold text-white mb-12 italic">Palabras de Agradecimiento</h2>
-        <div className="flex gap-6 animate-marquee mb-8">
+        <div className="flex gap-6 animate-marquee mb-8 hover:[animation-play-state:paused]">
           {[...Array(15)].map((_, i) => (
             <div key={i} className="w-[300px] bg-[#1e293b] p-6 rounded-2xl shrink-0 border border-white/5">
               <div className="flex text-yellow-500 mb-2">
@@ -96,7 +91,7 @@ export default function HomePage() {
             </div>
           ))}
         </div>
-        <div className="flex gap-6 animate-marquee-reverse">
+        <div className="flex gap-6 animate-marquee-reverse hover:[animation-play-state:paused]">
           {[...Array(15)].map((_, i) => (
             <div key={i} className="w-[300px] bg-[#1e293b] p-6 rounded-2xl shrink-0 border border-white/5">
               <div className="flex text-yellow-500 mb-2">
@@ -109,7 +104,6 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* FOOTER */}
       <footer className="bg-gray-50 py-16 px-6 border-t border-gray-200">
         <div className="max-w-7xl mx-auto grid md:grid-cols-2 gap-10 text-sm text-gray-500">
           <div>
@@ -119,7 +113,7 @@ export default function HomePage() {
           </div>
           <div className="md:text-right">
             <p>© 2026 SERCOPREV. Todos los derechos reservados.</p>
-            <p className="text-[10px] mt-2">Desarrollado por FocusFrame Media SpA.</p>
+            <p className="text-[10px] mt-2">Desarrollado en Chile por FocusFrame Media SpA.</p>
           </div>
         </div>
       </footer>
