@@ -2,6 +2,7 @@
 
 import { createClient } from '../../utils/supabase/server'
 import { redirect } from 'next/navigation'
+import { revalidatePath } from 'next/cache' // <--- AGREGA ESTA LÍNEA
 
 export async function login(formData: FormData) {
   const supabase = await createClient()
@@ -19,7 +20,7 @@ export async function login(formData: FormData) {
     return redirect('/login?message=Credenciales incorrectas')
   }
 
-  // Si todo está bien, mandamos al dashboard (que luego redirigirá al admin si corresponde)
+  // Limpiamos caché y redirigimos
   revalidatePath('/', 'layout')
   return redirect('/dashboard')
 }
