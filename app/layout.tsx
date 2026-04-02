@@ -6,10 +6,7 @@ const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "SERCOPREV - Contabilidad y Gestión",
-  description: "Su Partner Estratégico en el Camino al Éxito",
-  icons: {
-    icon: "/logo.png",
-  },
+  description: "Su Partner Estratégico en el Camino al Éxito. Más de 30 años impulsando Pymes.",
 };
 
 export default function RootLayout({
@@ -18,8 +15,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="es">
-      <body className={inter.className}>{children}</body>
+    <html lang="es" className="scroll-smooth">
+      <body className={`${inter.className} bg-[#fafafa] text-[#0f172a] antialiased`}>
+        {children}
+      </body>
     </html>
   );
 }
