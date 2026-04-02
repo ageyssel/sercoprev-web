@@ -1,29 +1,28 @@
-import { Montserrat } from 'next/font/google'
-import './globals.css'
+// app/layout.tsx
+import type { Metadata } from "next";
 
-// Configuramos la fuente Montserrat
-const montserrat = Montserrat({ 
-  subsets: ['latin'],
-  weight: ['400', '500', '600', '700', '800'], // Diferentes grosores
-})
-
-// Optimizamos el título que aparece en la pestaña del navegador (SEO)
-export const metadata = {
-  title: 'SERCOPREV - Contabilidad y Gestión',
-  description: 'Más de 30 años impulsando el crecimiento de Micro, Pequeñas y Medianas empresas en Chile.',
-}
+export const metadata: Metadata = {
+  title: "SERCOPREV - Contabilidad y Gestión",
+  description: "Su partner estratégico en contabilidad y gestión empresarial.",
+  icons: {
+    icon: "/logo.png", // Esto apunta directamente a public/logo.png
+    shortcut: "/logo.png",
+    apple: "/logo.png",
+  },
+};
 
 export default function RootLayout({
   children,
 }: {
-  children: React.ReactNode
+  children: React.ReactNode;
 }) {
   return (
     <html lang="es">
-      {/* Aplicamos la fuente a todo el cuerpo de la página */}
-      <body className={montserrat.className}>
-        {children}
-      </body>
+      <head>
+        {/* Esto asegura que el icono cargue en todos los navegadores */}
+        <link rel="icon" href="/logo.png" />
+      </head>
+      <body>{children}</body>
     </html>
-  )
+  );
 }
