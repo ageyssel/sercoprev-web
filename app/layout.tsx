@@ -1,13 +1,12 @@
 // app/layout.tsx
 import type { Metadata } from "next";
 
+// app/layout.tsx
 export const metadata: Metadata = {
   title: "SERCOPREV - Contabilidad y Gestión",
-  description: "Su partner estratégico en contabilidad y gestión empresarial.",
+  description: "Su Partner Estratégico en el Camino al Éxito",
   icons: {
-    icon: "/logo.png", // Esto apunta directamente a public/logo.png
-    shortcut: "/logo.png",
-    apple: "/logo.png",
+    icon: "/logo.png",
   },
 };
 
@@ -26,3 +25,11 @@ export default function RootLayout({
     </html>
   );
 }
+// app/layout.tsx
+export const metadata: Metadata = {
+  title: "SERCOPREV - Contabilidad y Gestión", [cite: 4]
+  description: "Su Partner Estratégico en el Camino al Éxito", [cite: 6]
+  icons: {
+    icon: "/logo.png", // Asegúrate de que el logo esté en la carpeta public/
+  },
+};
