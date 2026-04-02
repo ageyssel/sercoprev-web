@@ -1,3 +1,4 @@
+export const runtime = 'edge' // <--- AGREGA ESTA LÍNEA
 import { login } from './actions'
 
 export default async function LoginPage({

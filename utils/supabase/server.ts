@@ -19,8 +19,9 @@ export async function createClient() {
         set(name: string, value: string, options: CookieOptions) {
           try {
             cookieStore.set({ name, value, ...options })
-          } catch (error) {
-            // Silenciamos el error en Server Components
+          } catch {
+            // En Edge, a veces no se pueden setear cookies desde Server Components
+            // Esto es normal y Next.js lo maneja internamente con middleware
           }
         },
         remove(name: string, options: CookieOptions) {

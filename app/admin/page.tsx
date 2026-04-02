@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic'
+export const runtime = 'edge' // <--- AGREGA ESTA LÍNEA
 import { redirect } from 'next/navigation'
 import { createClient } from '../../utils/supabase/server'
 import { signOut } from '../dashboard/actions'
