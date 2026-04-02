@@ -1,5 +1,7 @@
 'use server'
 
+export const runtime = 'edge' // <--- AGREGA ESTA LÍNEA AQUÍ TAMBIÉN
+
 import { createClient } from '../../utils/supabase/server'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache' // <--- AGREGA ESTA LÍNEA
