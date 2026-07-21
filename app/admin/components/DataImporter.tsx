@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import * as XLSX from 'xlsx'
-import { Download, UploadCloud } from 'lucide-react'
+import { SimpleIcon } from '@/components/SimpleIcon'
 import { importarDatosEmpresa } from '../actions'
 
 const SERVICE_STRUCTURE = {
@@ -206,7 +206,7 @@ export function DataImporter({ clientes }: { clientes: ClientOption[] }) {
               disabled={!subcategoria}
               className="flex items-center justify-center gap-2 bg-[#0f172a] hover:bg-[#1e293b] text-white px-6 py-3 rounded-lg font-bold transition-all disabled:opacity-50"
             >
-              <Download className="w-4 h-4" aria-hidden="true" /> Bajar Planilla Tipo
+              <SimpleIcon name="download" className="w-4 h-4" /> Bajar Planilla Tipo
             </button>
           </div>
         </div>
@@ -214,7 +214,7 @@ export function DataImporter({ clientes }: { clientes: ClientOption[] }) {
 
       {subcategoria && (
         <div className="border-2 border-dashed border-gray-300 p-6 rounded-xl text-center bg-gray-50 hover:bg-gray-100 transition-colors animate-fade-in">
-          <UploadCloud className="w-10 h-10 text-[#1e3a8a] mx-auto mb-3" aria-hidden="true" />
+          <SimpleIcon name="upload" className="w-10 h-10 text-[#1e3a8a] mx-auto mb-3" />
           <label htmlFor="archivo-importacion" className="block text-sm font-bold text-[#0f172a] mb-2">
             4. Subir Planilla Completada
           </label>
