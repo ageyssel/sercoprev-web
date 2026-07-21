@@ -34,16 +34,26 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci --no-audit --no-fund
+        run: npm ci --no-audit --no-fund --silent
 
       - name: Lint
-        run: npm run lint
+        run: npm run lint -- --quiet
 
       - name: Typecheck
         run: npm run typecheck
 
       - name: Build Cloudflare Worker
-        run: npm run build:cloudflare
+        shell: bash
+        run: |
+          set +e
+          npm run build:cloudflare > /tmp/sercoprev-cloudflare-build.log 2>&1
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            echo "Cloudflare build failed with exit code $status"
+            tail -n 160 /tmp/sercoprev-cloudflare-build.log
+            exit "$status"
+          fi
+          tail -n 40 /tmp/sercoprev-cloudflare-build.log
 
       - name: Smoke test in workerd
         shell: bash
@@ -56,7 +66,7 @@ jobs:
           for attempt in $(seq 1 60); do
             if ! kill -0 "$preview_pid" 2>/dev/null; then
               echo "Cloudflare preview stopped unexpectedly"
-              cat /tmp/sercoprev-preview.log
+              tail -n 160 /tmp/sercoprev-preview.log
               exit 1
             fi
 
@@ -70,5 +80,5 @@ jobs:
           done
 
           echo "Cloudflare preview did not return HTTP 200"
-          cat /tmp/sercoprev-preview.log
+          tail -n 160 /tmp/sercoprev-preview.log
           exit 1
