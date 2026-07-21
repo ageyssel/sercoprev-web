@@ -1,15 +1,6 @@
 import Link from 'next/link'
 import Image from 'next/image'
-import {
-  Star,
-  MessageCircle,
-  ChevronRight,
-  ShieldCheck,
-  UserCheck,
-  Gavel,
-  FileText,
-  PlayCircle,
-} from 'lucide-react'
+import { SimpleIcon } from '@/components/SimpleIcon'
 
 export default function HomePage() {
   return (
@@ -66,7 +57,7 @@ export default function HomePage() {
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                <MessageCircle className="w-6 h-6" aria-hidden="true" /> Asesoría por WhatsApp
+                <SimpleIcon name="message-circle" className="w-6 h-6" /> Asesoría por WhatsApp
               </a>
             </div>
           </div>
@@ -112,22 +103,22 @@ export default function HomePage() {
 
           <div className="max-w-7xl mx-auto grid md:grid-cols-2 lg:grid-cols-4 gap-8">
             <ServiceCard
-              icon={<ShieldCheck className="w-12 h-12" aria-hidden="true" />}
+              icon={<SimpleIcon name="shield-check" className="w-12 h-12" />}
               title="Contabilidad y Tributación"
               items={['Contabilidad simplificada', 'Declaraciones (IVA, Renta)', 'Balances financieros', 'Auditorías contables']}
             />
             <ServiceCard
-              icon={<UserCheck className="w-12 h-12" aria-hidden="true" />}
+              icon={<SimpleIcon name="user-check" className="w-12 h-12" />}
               title="Recursos Humanos"
               items={['Contratos de trabajo', 'Liquidaciones y finiquitos', 'Pago Previred', 'Representación DT']}
             />
             <ServiceCard
-              icon={<Gavel className="w-12 h-12" aria-hidden="true" />}
+              icon={<SimpleIcon name="gavel" className="w-12 h-12" />}
               title="Gestión Legal"
               items={['Constitución de sociedades', 'Flujos de caja', 'Facturación electrónica', 'Registro INAPI']}
             />
             <ServiceCard
-              icon={<FileText className="w-12 h-12" aria-hidden="true" />}
+              icon={<SimpleIcon name="file-text" className="w-12 h-12" />}
               title="Trámites Generales"
               items={['Patentes y Resoluciones', 'Tesorería General (TGR)', 'Gestiones SII', 'Conservador (CBRS)']}
             />
@@ -219,7 +210,7 @@ function ServiceCard({ icon, title, items }: { icon: React.ReactNode; title: str
       <ul className="space-y-3 text-sm text-gray-600 font-medium">
         {items.map((item) => (
           <li key={item} className="flex gap-3 items-start">
-            <ChevronRight className="w-4 h-4 text-[#eab308] shrink-0 mt-0.5" aria-hidden="true" />
+            <SimpleIcon name="chevron-right" className="w-4 h-4 text-[#eab308] shrink-0 mt-0.5" />
             {item}
           </li>
         ))}
@@ -239,7 +230,7 @@ function VideoCard({ image, title }: { image: string; title: string }) {
     >
       <div className="aspect-video bg-gray-800 flex items-center justify-center relative">
         <Image src={image} alt="" fill className="object-cover opacity-60 group-hover:opacity-80 transition-opacity" />
-        <PlayCircle className="w-14 h-14 text-[#eab308] relative z-10 group-hover:scale-110 transition-transform" aria-hidden="true" />
+        <SimpleIcon name="play-circle" className="w-14 h-14 text-[#eab308] relative z-10 group-hover:scale-110 transition-transform" />
       </div>
       <div className="p-4 bg-white">
         <h3 className="font-bold text-[#0f172a] mb-1">{title}</h3>
@@ -254,7 +245,7 @@ function TestimonialCard({ index }: { index: number }) {
     <article className="w-[380px] bg-[#1e293b] p-8 rounded-xl border border-gray-700 flex-shrink-0 hover:border-[#eab308] transition-colors shadow-lg">
       <div className="flex text-[#eab308] mb-5" aria-label="5 de 5 estrellas">
         {[...Array(5)].map((_, starIndex) => (
-          <Star key={starIndex} className="w-5 h-5 fill-current" aria-hidden="true" />
+          <SimpleIcon key={starIndex} name="star" className="w-5 h-5" />
         ))}
       </div>
       <p className="text-gray-300 italic mb-6 leading-relaxed font-light">
