@@ -47,5 +47,7 @@ jobs:
             echo
             echo "Exit code: $status"
           } > /tmp/comment.md
-          gh pr comment 1 --body-file /tmp/comment.md
+          gh api repos/ageyssel/sercoprev-web/issues/comments/5038885093 \
+            --method PATCH \
+            --raw-field body="$(cat /tmp/comment.md)"
           exit "$status"
