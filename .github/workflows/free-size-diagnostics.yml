@@ -28,18 +28,44 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Measure bundle
+      - name: Measure and inspect bundle
         shell: bash
         run: |
           npm ci --no-audit --no-fund --silent
           npm run build:cloudflare > /tmp/build.log 2>&1
           npx wrangler deploy --dry-run --outdir .wrangler-dry-run > /tmp/size.log 2>&1
+
+          python <<'PY' > /tmp/modules.log
+          import json
+          from pathlib import Path
+
+          meta_path = Path('.open-next/server-functions/default/handler.mjs.meta.json')
+          if not meta_path.exists():
+              print(f'No existe {meta_path}')
+              raise SystemExit(0)
+
+          data = json.loads(meta_path.read_text())
+          sizes = {}
+          for output in data.get('outputs', {}).values():
+              for path, details in output.get('inputs', {}).items():
+                  sizes[path] = sizes.get(path, 0) + int(details.get('bytesInOutput', 0))
+
+          for path, size in sorted(sizes.items(), key=lambda item: item[1], reverse=True)[:40]:
+              print(f'{size / 1024:10.2f} KiB  {path}')
+          PY
+
           {
             echo '<!-- sercoprev-free-size -->'
-            echo '### Tamaño del Worker para plan Free'
+            echo '### Tamaño y módulos del Worker'
             echo
             echo '```text'
             cat /tmp/size.log
+            echo
+            echo 'Módulos con mayor aporte al handler:'
+            cat /tmp/modules.log
             echo '```'
           } > /tmp/comment.md
-          gh pr comment 2 --body-file /tmp/comment.md
+
+          gh api repos/ageyssel/sercoprev-web/issues/comments/5039888555 \
+            --method PATCH \
+            --raw-field body="$(cat /tmp/comment.md)"
