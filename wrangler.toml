@@ -1,8 +1,15 @@
 name = "sercoprev-web"
-compatibility_date = "2024-09-23"
-compatibility_flags = ["nodejs_compat"]
+compatibility_date = "2025-04-01"
+compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
 main = ".open-next/worker.js"
 
 [assets]
 directory = ".open-next/assets"
 binding = "ASSETS"
+
+[[services]]
+binding = "WORKER_SELF_REFERENCE"
+service = "sercoprev-web"
+
+[observability]
+enabled = true

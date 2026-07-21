@@ -1,36 +1,93 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# SERCOPREV Web
 
-## Getting Started
+Portal corporativo y área privada de clientes de SERCOPREV.
 
-First, run the development server:
+## Stack
+
+- Next.js 16 y React 19
+- TypeScript
+- Tailwind CSS 4
+- Supabase Auth, Postgres, RLS y Storage
+- Resend para correos transaccionales opcionales
+- OpenNext y Cloudflare Workers
+
+## Módulos
+
+- Sitio público corporativo
+- Login de clientes y administración
+- Panel administrativo
+- Alta controlada de clientes
+- Importación de datos desde Excel
+- Portal privado de documentos
+- Cambio obligatorio de contraseña temporal
+
+## Configuración local
 
 ```bash
+cp .env.example .env.local
+npm ci
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Variables obligatorias:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```text
+NEXT_PUBLIC_SUPABASE_URL
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+SUPABASE_SECRET_KEY
+APP_BASE_URL
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Variables opcionales:
 
-## Learn More
+```text
+RESEND_API_KEY
+RESEND_FROM_EMAIL
+```
 
-To learn more about Next.js, take a look at the following resources:
+Nunca agregue `SUPABASE_SECRET_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, contraseñas o tokens personales al repositorio.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Supabase
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+La base se reconstruye desde:
 
-## Deploy on Vercel
+```text
+supabase/migrations/202607210001_initial_secure_schema.sql
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+El procedimiento completo está en:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```text
+docs/SUPABASE_SETUP.md
+```
+
+Todas las tablas expuestas utilizan RLS. Las mutaciones administrativas se ejecutan en Server Actions que vuelven a autenticar y autorizar al administrador antes de utilizar la clave privilegiada.
+
+## Validación
+
+```bash
+npm run lint
+npm run typecheck
+npm run build
+```
+
+O todo junto:
+
+```bash
+npm run check
+```
+
+## Despliegue en Cloudflare
+
+```bash
+npm run deploy
+```
+
+Los secretos deben configurarse directamente en Cloudflare o mediante Wrangler:
+
+```bash
+npx wrangler secret put SUPABASE_SECRET_KEY
+npx wrangler secret put RESEND_API_KEY
+```
+
+La rama principal no debe recibir cambios directos. Use ramas de trabajo y pull requests revisables.
