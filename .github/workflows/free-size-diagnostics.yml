@@ -1,0 +1,45 @@
+name: Free bundle size diagnostics
+
+on:
+  push:
+    branches:
+      - hotfix/cloudflare-free-size
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  size:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      NEXT_PUBLIC_SUPABASE_URL: https://kxrxlygnhukfmdgqhoaz.supabase.co
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_LpXB0WEd-O8Y5ARxeEZ2hQ_xhw3jP1n
+      APP_BASE_URL: https://www.sercoprev.cl
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Measure bundle
+        shell: bash
+        run: |
+          npm ci --no-audit --no-fund --silent
+          npm run build:cloudflare > /tmp/build.log 2>&1
+          npx wrangler deploy --dry-run --outdir .wrangler-dry-run > /tmp/size.log 2>&1
+          {
+            echo '<!-- sercoprev-free-size -->'
+            echo '### Tamaño del Worker para plan Free'
+            echo
+            echo '```text'
+            cat /tmp/size.log
+            echo '```'
+          } > /tmp/comment.md
+          gh pr comment 2 --body-file /tmp/comment.md
