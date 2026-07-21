@@ -1,38 +1,26 @@
-import { createServerClient, type CookieOptions } from '@supabase/ssr'
+import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
+import { getSupabasePublicConfig } from './config'
 
 export async function createClient() {
   const cookieStore = await cookies()
+  const { url, publishableKey } = getSupabasePublicConfig()
 
-  // Forzamos la lectura de variables
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? ""
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ""
-
-  return createServerClient(
-    supabaseUrl,
-    supabaseAnonKey,
-    {
-      cookies: {
-        get(name: string) {
-          return cookieStore.get(name)?.value
-        },
-        set(name: string, value: string, options: CookieOptions) {
-          // En Edge Runtime, las cookies se manejan vía Middleware o Response, 
-          // pero dejamos el bloque try-catch para evitar el error 500.
-          try {
-            cookieStore.set({ name, value, ...options })
-          } catch (error) {
-            // Ignorar: Next.js manejará la persistencia
-          }
-        },
-        remove(name: string, options: CookieOptions) {
-          try {
-            cookieStore.set({ name, value: '', ...options })
-          } catch (error) {
-            // Ignorar
-          }
-        },
+  return createServerClient(url, publishableKey, {
+    cookies: {
+      getAll() {
+        return cookieStore.getAll()
       },
-    }
-  )
+      setAll(cookiesToSet) {
+        try {
+          cookiesToSet.forEach(({ name, value, options }) => {
+            cookieStore.set(name, value, options)
+          })
+        } catch {
+          // En Server Components las cookies solo pueden escribirse desde
+          // Server Actions, Route Handlers o Proxy. Proxy refresca la sesión.
+        }
+      },
+    },
+  })
 }
