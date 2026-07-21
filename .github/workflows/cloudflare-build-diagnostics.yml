@@ -1,0 +1,51 @@
+name: Cloudflare build diagnostics
+
+on:
+  push:
+    branches:
+      - agent/supabase-security-hardening
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      NEXT_PUBLIC_SUPABASE_URL: https://kxrxlygnhukfmdgqhoaz.supabase.co
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_LpXB0WEd-O8Y5ARxeEZ2hQ_xhw3jP1n
+      APP_BASE_URL: https://www.sercoprev.cl
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci --no-audit --no-fund --silent
+
+      - name: Capture build output
+        shell: bash
+        run: |
+          set +e
+          npm run build:cloudflare > /tmp/cloudflare-build.log 2>&1
+          status=$?
+          {
+            echo '<!-- sercoprev-cloudflare-build-diagnostics -->'
+            echo '### Diagnóstico temporal del build Cloudflare'
+            echo
+            echo '```text'
+            tail -n 180 /tmp/cloudflare-build.log
+            echo '```'
+            echo
+            echo "Exit code: $status"
+          } > /tmp/comment.md
+          gh pr comment 1 --body-file /tmp/comment.md
+          exit "$status"
