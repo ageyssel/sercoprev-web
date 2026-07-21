@@ -1,0 +1,60 @@
+name: Capture Worker bundle modules
+
+on:
+  push:
+    branches:
+      - hotfix/cloudflare-free-size
+    paths:
+      - .github/workflows/capture-bundle-modules.yml
+
+permissions:
+  contents: write
+
+jobs:
+  capture:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: https://kxrxlygnhukfmdgqhoaz.supabase.co
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_LpXB0WEd-O8Y5ARxeEZ2hQ_xhw3jP1n
+      APP_BASE_URL: https://www.sercoprev.cl
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: hotfix/cloudflare-free-size
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Build and capture modules
+        shell: bash
+        run: |
+          npm ci --no-audit --no-fund --silent
+          npm run build:cloudflare > /tmp/build.log 2>&1
+          npx wrangler deploy --dry-run --outdir .wrangler-dry-run > /tmp/size.log 2>&1
+          mkdir -p diagnostics
+          python <<'PY' > diagnostics/worker-bundle-modules.txt
+          import json
+          from pathlib import Path
+
+          print(Path('/tmp/size.log').read_text())
+          meta_path = Path('.open-next/server-functions/default/handler.mjs.meta.json')
+          print(f'\nMetafile: {meta_path}\n')
+          data = json.loads(meta_path.read_text())
+          sizes = {}
+          for output in data.get('outputs', {}).values():
+              for path, details in output.get('inputs', {}).items():
+                  sizes[path] = sizes.get(path, 0) + int(details.get('bytesInOutput', 0))
+          for path, size in sorted(sizes.items(), key=lambda item: item[1], reverse=True)[:80]:
+              print(f'{size / 1024:10.2f} KiB  {path}')
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add diagnostics/worker-bundle-modules.txt
+          git commit -m "Capture Worker bundle module sizes"
+          git push origin HEAD:hotfix/cloudflare-free-size
