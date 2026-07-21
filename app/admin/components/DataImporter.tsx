@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import * as XLSX from 'xlsx'
 import { SimpleIcon } from '@/components/SimpleIcon'
 import { importarDatosEmpresa } from '../actions'
 
@@ -42,7 +41,116 @@ type Feedback = {
   message: string
 }
 
-const MAX_FILE_SIZE = 5 * 1024 * 1024
+type ImportRow = Record<string, string>
+
+const MAX_FILE_SIZE = 2 * 1024 * 1024
+const MAX_ROWS = 500
+const REQUIRED_HEADERS = ['periodo', 'descripcion', 'monto', 'estado'] as const
+
+function normalizeHeader(value: string) {
+  return value
+    .replace(/^\uFEFF/, '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_')
+}
+
+function countDelimiter(line: string, delimiter: string) {
+  let quoted = false
+  let count = 0
+
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index]
+    if (character === '"') {
+      if (quoted && line[index + 1] === '"') {
+        index += 1
+      } else {
+        quoted = !quoted
+      }
+    } else if (!quoted && character === delimiter) {
+      count += 1
+    }
+  }
+
+  return count
+}
+
+function parseCsv(text: string): ImportRow[] {
+  const source = text.replace(/^\uFEFF/, '')
+  const firstLine = source.split(/\r?\n/, 1)[0] ?? ''
+  const delimiter = countDelimiter(firstLine, ';') >= countDelimiter(firstLine, ',') ? ';' : ','
+  const table: string[][] = []
+  let row: string[] = []
+  let field = ''
+  let quoted = false
+
+  for (let index = 0; index < source.length; index += 1) {
+    const character = source[index]
+
+    if (character === '"') {
+      if (quoted && source[index + 1] === '"') {
+        field += '"'
+        index += 1
+      } else {
+        quoted = !quoted
+      }
+      continue
+    }
+
+    if (character === delimiter && !quoted) {
+      row.push(field)
+      field = ''
+      continue
+    }
+
+    if ((character === '\n' || character === '\r') && !quoted) {
+      if (character === '\r' && source[index + 1] === '\n') index += 1
+      row.push(field)
+      if (row.some((cell) => cell.trim() !== '')) table.push(row)
+      row = []
+      field = ''
+      continue
+    }
+
+    field += character
+  }
+
+  if (quoted) throw new Error('El archivo CSV contiene comillas sin cerrar.')
+
+  row.push(field)
+  if (row.some((cell) => cell.trim() !== '')) table.push(row)
+
+  if (table.length < 2) {
+    throw new Error('La planilla está vacía o no contiene registros.')
+  }
+
+  const headers = table[0].map(normalizeHeader)
+  const missingHeaders = REQUIRED_HEADERS.filter((header) => !headers.includes(header))
+
+  if (missingHeaders.length > 0) {
+    throw new Error(`Faltan columnas obligatorias: ${missingHeaders.join(', ')}.`)
+  }
+
+  const rows = table.slice(1).map((cells) => {
+    const record: ImportRow = {}
+    headers.forEach((header, index) => {
+      record[header] = cells[index]?.trim() ?? ''
+    })
+    return record
+  })
+
+  if (rows.length > MAX_ROWS) {
+    throw new Error(`La planilla no puede superar ${MAX_ROWS} registros.`)
+  }
+
+  return rows
+}
+
+function csvCell(value: string | number) {
+  return `"${String(value).replaceAll('"', '""')}"`
+}
 
 export function DataImporter({ clientes }: { clientes: ClientOption[] }) {
   const [empresaId, setEmpresaId] = useState('')
@@ -59,31 +167,43 @@ export function DataImporter({ clientes }: { clientes: ClientOption[] }) {
       return
     }
 
-    const wsData = [
-      ['periodo', 'descripcion', 'monto', 'estado'],
-      ['Ej: Abril 2026', `Ej: ${subcategoria}`, 150000, 'Al día'],
-    ]
+    const csv = [
+      REQUIRED_HEADERS.map(csvCell).join(';'),
+      [
+        'Ej: Abril 2026',
+        `Ej: ${subcategoria}`,
+        150000,
+        'Al día',
+      ].map(csvCell).join(';'),
+    ].join('\r\n')
 
-    const worksheet = XLSX.utils.aoa_to_sheet(wsData)
-    const workbook = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Plantilla_Datos')
-    XLSX.writeFile(
-      workbook,
-      `Plantilla_${subcategoria.replace(/[^a-zA-Z0-9]/g, '_')}.xlsx`,
-    )
+    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `Plantilla_${subcategoria.replace(/[^a-zA-Z0-9]/g, '_')}.csv`
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    URL.revokeObjectURL(url)
   }
 
   const handleFileUpload = async () => {
     if (!empresaId || !categoria || !subcategoria || !file) {
       setFeedback({
         ok: false,
-        message: 'Complete todos los campos y seleccione una planilla.',
+        message: 'Complete todos los campos y seleccione una planilla CSV.',
       })
       return
     }
 
+    if (!file.name.toLowerCase().endsWith('.csv')) {
+      setFeedback({ ok: false, message: 'El archivo debe estar guardado en formato CSV.' })
+      return
+    }
+
     if (file.size > MAX_FILE_SIZE) {
-      setFeedback({ ok: false, message: 'La planilla no puede superar 5 MB.' })
+      setFeedback({ ok: false, message: 'La planilla CSV no puede superar 2 MB.' })
       return
     }
 
@@ -91,24 +211,7 @@ export function DataImporter({ clientes }: { clientes: ClientOption[] }) {
       setLoading(true)
       setFeedback(null)
 
-      const data = new Uint8Array(await file.arrayBuffer())
-      const workbook = XLSX.read(data, { type: 'array' })
-      const firstSheetName = workbook.SheetNames[0]
-
-      if (!firstSheetName) {
-        throw new Error('La planilla no contiene hojas.')
-      }
-
-      const worksheet = workbook.Sheets[firstSheetName]
-      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, {
-        defval: '',
-        raw: false,
-      })
-
-      if (rows.length === 0) {
-        throw new Error('La planilla está vacía.')
-      }
-
+      const rows = parseCsv(await file.text())
       const result = await importarDatosEmpresa({
         empresaId,
         categoria,
@@ -125,7 +228,7 @@ export function DataImporter({ clientes }: { clientes: ClientOption[] }) {
     } catch (error) {
       setFeedback({
         ok: false,
-        message: error instanceof Error ? error.message : 'No fue posible leer la planilla.',
+        message: error instanceof Error ? error.message : 'No fue posible leer la planilla CSV.',
       })
     } finally {
       setLoading(false)
@@ -206,7 +309,7 @@ export function DataImporter({ clientes }: { clientes: ClientOption[] }) {
               disabled={!subcategoria}
               className="flex items-center justify-center gap-2 bg-[#0f172a] hover:bg-[#1e293b] text-white px-6 py-3 rounded-lg font-bold transition-all disabled:opacity-50"
             >
-              <SimpleIcon name="download" className="w-4 h-4" /> Bajar Planilla Tipo
+              <SimpleIcon name="download" className="w-4 h-4" /> Bajar Plantilla CSV
             </button>
           </div>
         </div>
@@ -216,17 +319,19 @@ export function DataImporter({ clientes }: { clientes: ClientOption[] }) {
         <div className="border-2 border-dashed border-gray-300 p-6 rounded-xl text-center bg-gray-50 hover:bg-gray-100 transition-colors animate-fade-in">
           <SimpleIcon name="upload" className="w-10 h-10 text-[#1e3a8a] mx-auto mb-3" />
           <label htmlFor="archivo-importacion" className="block text-sm font-bold text-[#0f172a] mb-2">
-            4. Subir Planilla Completada
+            4. Subir CSV completado
           </label>
           <input
             key={fileInputKey}
             id="archivo-importacion"
             type="file"
-            accept=".xlsx,.xls,.csv"
+            accept=".csv,text/csv"
             onChange={(event) => setFile(event.target.files?.[0] ?? null)}
             className="mx-auto text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-[#1e3a8a] file:text-white hover:file:bg-[#1e40af] cursor-pointer"
           />
-          <p className="mt-2 text-xs text-gray-500">Máximo 500 filas y 5 MB.</p>
+          <p className="mt-2 text-xs text-gray-500">
+            Compatible con Excel. Máximo 500 filas y 2 MB. Guarde el archivo como CSV UTF-8.
+          </p>
         </div>
       )}
 
@@ -250,7 +355,7 @@ export function DataImporter({ clientes }: { clientes: ClientOption[] }) {
         disabled={loading || !file}
         className="w-full flex justify-center items-center gap-2 bg-[#eab308] hover:bg-yellow-500 text-[#0f172a] font-black py-4 rounded-xl transition-all shadow-md disabled:opacity-50 mt-6 text-lg"
       >
-        {loading ? 'Procesando planilla...' : 'Subir a la Base de Datos'}
+        {loading ? 'Procesando CSV...' : 'Subir a la Base de Datos'}
       </button>
     </div>
   )
