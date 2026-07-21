@@ -1,4 +1,5 @@
 import type { NextConfig } from 'next'
+import { initOpenNextCloudflareForDev } from '@opennextjs/cloudflare'
 
 const contentSecurityPolicy = [
   "default-src 'self'",
@@ -12,7 +13,7 @@ const contentSecurityPolicy = [
   "img-src 'self' data: blob: https://images.unsplash.com",
   "connect-src 'self' https://*.supabase.co wss://*.supabase.co",
   "worker-src 'self' blob:",
-  "upgrade-insecure-requests",
+  'upgrade-insecure-requests',
 ].join('; ')
 
 const securityHeaders = [
@@ -49,5 +50,7 @@ const nextConfig: NextConfig = {
     ]
   },
 }
+
+initOpenNextCloudflareForDev()
 
 export default nextConfig
