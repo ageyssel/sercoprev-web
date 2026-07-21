@@ -39,7 +39,9 @@ jobs:
           npx wrangler deploy --dry-run --outdir .wrangler-dry-run > /tmp/size.log 2>&1
           mkdir -p diagnostics
           python <<'PY' > diagnostics/worker-bundle-modules.txt
+          import gzip
           import json
+          import re
           from pathlib import Path
 
           print(Path('/tmp/size.log').read_text())
@@ -50,11 +52,42 @@ jobs:
           for output in data.get('outputs', {}).values():
               for path, details in output.get('inputs', {}).items():
                   sizes[path] = sizes.get(path, 0) + int(details.get('bytesInOutput', 0))
-          for path, size in sorted(sizes.items(), key=lambda item: item[1], reverse=True)[:80]:
+
+          ordered = sorted(sizes.items(), key=lambda item: item[1], reverse=True)
+          for path, size in ordered[:80]:
               print(f'{size / 1024:10.2f} KiB  {path}')
+
+          print('\nCHUNK INSPECTION\n')
+          tokens = [
+              'xlsx', '@supabase', 'supabase-js', 'postgrest', 'gotrue',
+              'realtime-js', 'storage-js', 'next/dist', 'react-dom',
+              'app/admin', 'DataImporter', 'createServerClient',
+          ]
+          inspected = 0
+          for path, _ in ordered:
+              chunk = Path(path)
+              if not chunk.exists() or chunk.suffix not in {'.js', '.mjs'}:
+                  continue
+              raw = chunk.read_bytes()
+              if len(raw) < 100_000:
+                  continue
+              inspected += 1
+              text = raw.decode('utf-8', errors='ignore')
+              compressed = len(gzip.compress(raw, compresslevel=9))
+              print(f'\n{chunk} | raw={len(raw)/1024:.2f} KiB | gzip={compressed/1024:.2f} KiB')
+              for token in tokens:
+                  count = text.lower().count(token.lower())
+                  if count:
+                      print(f'  token {token}: {count}')
+              markers = sorted(set(re.findall(r'\[project\]/([^\]"\n]+)', text)))
+              relevant = [marker for marker in markers if 'node_modules' in marker or marker.startswith('app/')]
+              for marker in relevant[:60]:
+                  print(f'  module {marker[:220]}')
+              if inspected >= 15:
+                  break
           PY
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add diagnostics/worker-bundle-modules.txt
-          git commit -m "Capture Worker bundle module sizes"
+          git commit -m "Capture detailed Worker bundle modules"
           git push origin HEAD:hotfix/cloudflare-free-size
