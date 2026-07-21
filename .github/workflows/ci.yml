@@ -1,0 +1,40 @@
+name: Validate
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches:
+      - main
+      - agent/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: https://kxrxlygnhukfmdgqhoaz.supabase.co
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_LpXB0WEd-O8Y5ARxeEZ2hQ_xhw3jP1n
+      APP_BASE_URL: https://www.sercoprev.cl
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Validate application
+        run: npm run check
