@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
-import { ShieldAlert, UserPlus, Database, Building } from 'lucide-react'
+import { SimpleIcon } from '@/components/SimpleIcon'
 import { createClient } from '../../utils/supabase/server'
 import { signOut } from '../dashboard/actions'
 import { CreateClientForm } from './components/CreateClientForm'
@@ -32,7 +32,7 @@ export default async function AdminPage() {
       <nav className="bg-[#0f172a] text-white p-4 shadow-md sticky top-0 z-50">
         <div className="max-w-7xl mx-auto flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <ShieldAlert className="w-6 h-6 text-red-500" aria-hidden="true" />
+            <SimpleIcon name="shield-alert" className="w-6 h-6 text-red-500" />
             <span className="font-bold text-xl">
               SERCOPREV <span className="text-red-500 font-medium">ADMIN</span>
             </span>
@@ -62,7 +62,7 @@ export default async function AdminPage() {
           <section className="bg-white p-8 rounded-2xl shadow-lg border border-gray-200" aria-labelledby="crear-cliente-title">
             <div className="flex items-center gap-3 mb-6 border-b pb-4">
               <div className="p-3 bg-blue-50 rounded-lg text-[#1d4ed8]">
-                <UserPlus className="w-6 h-6" aria-hidden="true" />
+                <SimpleIcon name="user-plus" className="w-6 h-6" />
               </div>
               <h1 id="crear-cliente-title" className="text-2xl font-bold text-gray-800">
                 Crear Nuevo Cliente
@@ -74,7 +74,7 @@ export default async function AdminPage() {
           <section className="bg-white p-8 rounded-2xl shadow-lg border border-gray-200" aria-labelledby="carga-datos-title">
             <div className="flex items-center gap-3 mb-6 border-b pb-4">
               <div className="p-3 bg-yellow-50 rounded-lg text-[#eab308]">
-                <Database className="w-6 h-6" aria-hidden="true" />
+                <SimpleIcon name="database" className="w-6 h-6" />
               </div>
               <h2 id="carga-datos-title" className="text-2xl font-bold text-gray-800">
                 Cargar Datos Financieros
@@ -91,7 +91,7 @@ export default async function AdminPage() {
 
         <section className="bg-white p-8 rounded-2xl shadow-lg border border-gray-200" aria-labelledby="directorio-title">
           <div className="flex items-center gap-3 mb-6">
-            <Building className="w-6 h-6 text-gray-500" aria-hidden="true" />
+            <SimpleIcon name="building" className="w-6 h-6 text-gray-500" />
             <h2 id="directorio-title" className="text-xl font-bold text-gray-800">
               Directorio de Clientes Activos
             </h2>
