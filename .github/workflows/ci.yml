@@ -18,7 +18,7 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 25
     env:
       NEXT_PUBLIC_SUPABASE_URL: https://kxrxlygnhukfmdgqhoaz.supabase.co
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_LpXB0WEd-O8Y5ARxeEZ2hQ_xhw3jP1n
@@ -34,7 +34,7 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci --ignore-scripts --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
 
       - name: Lint
         run: npm run lint
@@ -42,5 +42,33 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Build
-        run: npm run build
+      - name: Build Cloudflare Worker
+        run: npm run build:cloudflare
+
+      - name: Smoke test in workerd
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx opennextjs-cloudflare preview --port 8787 > /tmp/sercoprev-preview.log 2>&1 &
+          preview_pid=$!
+          trap 'kill "$preview_pid" 2>/dev/null || true' EXIT
+
+          for attempt in $(seq 1 60); do
+            if ! kill -0 "$preview_pid" 2>/dev/null; then
+              echo "Cloudflare preview stopped unexpectedly"
+              cat /tmp/sercoprev-preview.log
+              exit 1
+            fi
+
+            status=$(curl --silent --show-error --output /tmp/sercoprev-home.html --write-out '%{http_code}' http://127.0.0.1:8787/ || true)
+            if [ "$status" = "200" ]; then
+              grep -qi 'SERCOPREV' /tmp/sercoprev-home.html
+              exit 0
+            fi
+
+            sleep 1
+          done
+
+          echo "Cloudflare preview did not return HTTP 200"
+          cat /tmp/sercoprev-preview.log
+          exit 1
