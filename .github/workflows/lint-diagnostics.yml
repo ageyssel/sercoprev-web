@@ -1,0 +1,48 @@
+name: Lint diagnostics
+
+on:
+  push:
+    branches:
+      - agent/supabase-security-hardening
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci --ignore-scripts --no-audit --no-fund --silent
+
+      - name: Capture diagnostics
+        shell: bash
+        run: |
+          set +e
+          npm run lint > lint.log 2>&1
+          status=$?
+          {
+            echo '<!-- sercoprev-lint-diagnostics -->'
+            echo '### Diagnóstico temporal de ESLint'
+            echo
+            echo '```text'
+            tail -c 12000 lint.log
+            echo
+            echo '```'
+            echo
+            echo "Exit code: $status"
+          } > comment.md
+          gh pr comment 1 --body-file comment.md
