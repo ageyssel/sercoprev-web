@@ -1,0 +1,51 @@
+name: Capture Cloudflare build log
+
+on:
+  push:
+    branches:
+      - agent/supabase-security-hardening
+    paths:
+      - .github/workflows/capture-cloudflare-build-log.yml
+
+permissions:
+  contents: write
+
+jobs:
+  capture:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: https://kxrxlygnhukfmdgqhoaz.supabase.co
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_LpXB0WEd-O8Y5ARxeEZ2hQ_xhw3jP1n
+      APP_BASE_URL: https://www.sercoprev.cl
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: agent/supabase-security-hardening
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Capture build log
+        shell: bash
+        run: |
+          npm ci --no-audit --no-fund --silent
+          set +e
+          npm run build:cloudflare > /tmp/cloudflare-build.log 2>&1
+          status=$?
+          mkdir -p diagnostics
+          {
+            echo "Exit code: $status"
+            echo
+            tail -n 220 /tmp/cloudflare-build.log
+          } > diagnostics/cloudflare-build.log
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add diagnostics/cloudflare-build.log
+          git commit -m "Capture Cloudflare build diagnostics"
+          git push origin HEAD:agent/supabase-security-hardening
