@@ -2,7 +2,7 @@
  ⛅️ wrangler 4.113.0
 ────────────────────
 ✨ Read 45 files from the assets directory /home/runner/work/sercoprev-web/sercoprev-web/.open-next/assets
-Total Upload: 10929.48 KiB / gzip: 4016.95 KiB
+Total Upload: 10929.48 KiB / gzip: 4016.93 KiB
 Your Worker has access to the following bindings:
 Binding                                        Resource      
 env.WORKER_SELF_REFERENCE (sercoprev-web)      Worker        
@@ -95,3 +95,80 @@ Metafile: .open-next/server-functions/default/handler.mjs.meta.json
       5.24 KiB  .open-next/server-functions/default/.next/server/chunks/ssr/_0_fg3bp._.js
       5.01 KiB  .open-next/server-functions/default/node_modules/next/dist/lib/metadata/is-metadata-route.js
       4.98 KiB  .open-next/server-functions/default/.next/server/chunks/ssr/_0-2fl9b._.js
+
+CHUNK INSPECTION
+
+
+.open-next/server-functions/default/.next/server/chunks/[root-of-the-server]__17cj935._.js | raw=3390.84 KiB | gzip=2461.11 KiB
+  token xlsx: 4
+  token next/dist: 5
+  module app/favicon.ico--route-entry.js
+
+.open-next/server-functions/default/node_modules/next/dist/compiled/next-server/app-page-turbo.runtime.prod.js | raw=593.31 KiB | gzip=176.07 KiB
+  token next/dist: 19
+  token react-dom: 33
+
+.open-next/server-functions/default/.next/server/chunks/ssr/app_admin_components_0ks710b._.js | raw=467.48 KiB | gzip=154.50 KiB
+  token xlsx: 19
+  token DataImporter: 1
+
+.open-next/server-functions/default/.next/server/chunks/ssr/node_modules_02ze70q._.js | raw=248.99 KiB | gzip=61.08 KiB
+  token @supabase: 40
+  token supabase-js: 3
+  token postgrest: 1
+  token gotrue: 18
+  token realtime-js: 1
+  token storage-js: 1
+  token createServerClient: 5
+
+.open-next/server-functions/default/.next/server/chunks/ssr/node_modules_0ao5yp9._.js | raw=248.99 KiB | gzip=61.24 KiB
+  token @supabase: 40
+  token supabase-js: 3
+  token postgrest: 1
+  token gotrue: 18
+  token realtime-js: 1
+  token storage-js: 1
+  token createServerClient: 5
+
+.open-next/server-functions/default/.next/server/chunks/ssr/node_modules_19o6fmb._.js | raw=248.99 KiB | gzip=61.07 KiB
+  token @supabase: 40
+  token supabase-js: 3
+  token postgrest: 1
+  token gotrue: 18
+  token realtime-js: 1
+  token storage-js: 1
+  token createServerClient: 5
+
+.open-next/server-functions/default/.next/server/chunks/ssr/[root-of-the-server]__0nqskgw._.js | raw=185.60 KiB | gzip=54.42 KiB
+  token next/dist: 16
+  module node_modules/next/dist/esm/client/components/client-page.js
+  module node_modules/next/dist/esm/client/components/client-page.js <module evaluation>
+  module node_modules/next/dist/esm/client/components/client-segment.js
+  module node_modules/next/dist/esm/client/components/client-segment.js <module evaluation>
+  module node_modules/next/dist/esm/client/components/http-access-fallback/error-boundary.js
+  module node_modules/next/dist/esm/client/components/http-access-fallback/error-boundary.js <module evaluation>
+  module node_modules/next/dist/esm/client/components/layout-router.js
+  module node_modules/next/dist/esm/client/components/layout-router.js <module evaluation>
+  module node_modules/next/dist/esm/client/components/render-from-template-context.js
+  module node_modules/next/dist/esm/client/components/render-from-template-context.js <module evaluation>
+  module node_modules/next/dist/esm/lib/framework/boundary-components.js
+  module node_modules/next/dist/esm/lib/framework/boundary-components.js <module evaluation>
+  module node_modules/next/dist/esm/lib/metadata/generate/icon-mark.js
+  module node_modules/next/dist/esm/lib/metadata/generate/icon-mark.js <module evaluation>
+
+.open-next/server-functions/default/node_modules/react-dom/cjs/react-dom-server.edge.production.js | raw=267.20 KiB | gzip=48.65 KiB
+  token react-dom: 4
+
+.open-next/server-functions/default/node_modules/next/dist/compiled/next-server/app-route-turbo.runtime.prod.js | raw=166.14 KiB | gzip=50.68 KiB
+  token next/dist: 16
+
+.open-next/server-functions/default/node_modules/next/dist/compiled/next-server/pages-turbo.runtime.prod.js | raw=117.90 KiB | gzip=37.86 KiB
+  token next/dist: 12
+  token react-dom: 6
+
+.open-next/server-functions/default/node_modules/next/dist/compiled/jsonwebtoken/index.js | raw=118.22 KiB | gzip=35.60 KiB
+  token next/dist: 1
+
+.open-next/server-functions/default/.next/server/chunks/ssr/node_modules_next_dist_1qbpw8i._.js | raw=97.97 KiB | gzip=26.91 KiB
+
+.open-next/server-functions/default/node_modules/next/dist/server/base-server.js | raw=104.16 KiB | gzip=23.12 KiB
