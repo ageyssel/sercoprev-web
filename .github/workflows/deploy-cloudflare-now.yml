@@ -1,4 +1,4 @@
-name: Deploy Cloudflare diagnostics
+name: Check Supabase privileged secret now
 
 on:
   push:
@@ -11,185 +11,26 @@ permissions:
   issues: write
 
 jobs:
-  deploy:
+  check:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 5
     env:
       GH_TOKEN: ${{ github.token }}
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: 9021b712f9a73815e6b333a4870e0021
-      NEXT_PUBLIC_SUPABASE_URL: https://kxrxlygnhukfmdgqhoaz.supabase.co
-      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_LpXB0WEd-O8Y5ARxeEZ2hQ_xhw3jP1n
-      APP_BASE_URL: https://www.sercoprev.cl
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
     steps:
-      - name: Report start
+      - name: Report private credential availability only
+        shell: bash
         run: |
+          secret_key=false
+          service_role=false
+          [ -n "${SUPABASE_SECRET_KEY:-}" ] && secret_key=true
+          [ -n "${SUPABASE_SERVICE_ROLE_KEY:-}" ] && service_role=true
+
           gh issue comment 6 --repo ageyssel/sercoprev-web --body \
-            '⏳ Ejecución autenticada iniciada. Se comprobará la credencial, compilación, despliegue y salud productiva.'
+            "### Disponibilidad de credencial privada en GitHub
 
-      - name: Check credential
-        id: auth
-        shell: bash
-        run: |
-          if [ -n "${CLOUDFLARE_API_TOKEN:-}" ]; then
-            echo 'available=true' >> "$GITHUB_OUTPUT"
-            gh issue comment 6 --repo ageyssel/sercoprev-web --body \
-              '✅ GitHub Actions recibió `CLOUDFLARE_API_TOKEN`. El valor permanece oculto.'
-          else
-            echo 'available=false' >> "$GITHUB_OUTPUT"
-            gh issue comment 6 --repo ageyssel/sercoprev-web --body \
-              '❌ GitHub Actions no recibió `CLOUDFLARE_API_TOKEN`.'
-            exit 1
-          fi
+- \`SUPABASE_SECRET_KEY\`: $secret_key
+- \`SUPABASE_SERVICE_ROLE_KEY\`: $service_role
 
-      - name: Checkout production
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-        with:
-          ref: main
-
-      - name: Setup Node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install, build and deploy
-        id: release
-        shell: bash
-        run: |
-          set +e
-
-          npm ci --no-audit --no-fund --silent > /tmp/install.log 2>&1
-          install_code=$?
-
-          build_code=99
-          deploy_code=99
-
-          if [ "$install_code" -eq 0 ]; then
-            npm run build:cloudflare > /tmp/build.log 2>&1
-            build_code=$?
-          else
-            echo 'Build omitted because installation failed.' > /tmp/build.log
-          fi
-
-          if [ "$build_code" -eq 0 ]; then
-            npx opennextjs-cloudflare deploy -- --keep-vars > /tmp/deploy.log 2>&1
-            deploy_code=$?
-          else
-            echo 'Deploy omitted because build failed.' > /tmp/deploy.log
-          fi
-
-          echo "install_code=$install_code" >> "$GITHUB_OUTPUT"
-          echo "build_code=$build_code" >> "$GITHUB_OUTPUT"
-          echo "deploy_code=$deploy_code" >> "$GITHUB_OUTPUT"
-          echo "production_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-
-      - name: Verify production
-        id: verify
-        if: steps.release.outputs.deploy_code == '0'
-        shell: bash
-        run: |
-          set +e
-          healthy=false
-          home_status=000
-          login_status=000
-          health_status=000
-
-          for attempt in $(seq 1 30); do
-            home_status=$(curl --silent --show-error --location --max-time 20 \
-              --output /tmp/home.html --write-out '%{http_code}' \
-              'https://www.sercoprev.cl/' || true)
-            login_status=$(curl --silent --show-error --location --max-time 20 \
-              --output /tmp/login.html --write-out '%{http_code}' \
-              'https://www.sercoprev.cl/login' || true)
-            health_status=$(curl --silent --show-error --location --max-time 20 \
-              --output /tmp/health.json --write-out '%{http_code}' \
-              'https://www.sercoprev.cl/api/health' || true)
-
-            if [ "$home_status" = '200' ] \
-              && [ "$login_status" = '200' ] \
-              && [ "$health_status" = '200' ] \
-              && grep -qi 'SERCOPREV' /tmp/home.html \
-              && grep -qi 'Acceso Portal' /tmp/login.html \
-              && grep -q '"status":"ok"' /tmp/health.json; then
-              healthy=true
-              break
-            fi
-
-            sleep 10
-          done
-
-          echo "healthy=$healthy" >> "$GITHUB_OUTPUT"
-          echo "home_status=$home_status" >> "$GITHUB_OUTPUT"
-          echo "login_status=$login_status" >> "$GITHUB_OUTPUT"
-          echo "health_status=$health_status" >> "$GITHUB_OUTPUT"
-          exit 0
-
-      - name: Publish sanitized diagnosis
-        if: always()
-        shell: bash
-        env:
-          INSTALL_CODE: ${{ steps.release.outputs.install_code }}
-          BUILD_CODE: ${{ steps.release.outputs.build_code }}
-          DEPLOY_CODE: ${{ steps.release.outputs.deploy_code }}
-          PRODUCTION_SHA: ${{ steps.release.outputs.production_sha }}
-          HEALTHY: ${{ steps.verify.outputs.healthy }}
-          HOME_STATUS: ${{ steps.verify.outputs.home_status }}
-          LOGIN_STATUS: ${{ steps.verify.outputs.login_status }}
-          HEALTH_STATUS: ${{ steps.verify.outputs.health_status }}
-        run: |
-          sanitize() {
-            sed -E \
-              -e 's/(Bearer|Authorization:)[[:space:]]+[^[:space:]]+/\1 [REDACTED]/Ig' \
-              -e 's/(api[_-]?token|token|secret)[=:][[:space:]]*[^[:space:]]+/\1=[REDACTED]/Ig'
-          }
-
-          {
-            echo '## Resultado de despliegue autenticado'
-            echo
-            echo "- instalación: ${INSTALL_CODE:-no ejecutada}"
-            echo "- compilación: ${BUILD_CODE:-no ejecutada}"
-            echo "- Wrangler/OpenNext deploy: ${DEPLOY_CODE:-no ejecutado}"
-            echo "- commit de producción: \`${PRODUCTION_SHA:-desconocido}\`"
-            echo "- portada www: HTTP ${HOME_STATUS:-no verificada}"
-            echo "- login www: HTTP ${LOGIN_STATUS:-no verificado}"
-            echo "- health www: HTTP ${HEALTH_STATUS:-no verificado}"
-            echo "- salud completa: ${HEALTHY:-false}"
-            echo
-            if [ -f /tmp/health.json ]; then
-              echo '### Respuesta segura de health'
-              echo '```json'
-              head -c 2000 /tmp/health.json
-              echo
-              echo '```'
-            fi
-            if [ "${DEPLOY_CODE:-99}" != '0' ]; then
-              echo
-              echo '### Final del log de despliegue, sanitizado'
-              echo '```text'
-              tail -n 80 /tmp/deploy.log 2>/dev/null | sanitize
-              echo '```'
-            elif [ "${BUILD_CODE:-99}" != '0' ]; then
-              echo
-              echo '### Final del log de compilación, sanitizado'
-              echo '```text'
-              tail -n 80 /tmp/build.log 2>/dev/null | sanitize
-              echo '```'
-            fi
-          } > /tmp/diagnosis.md
-
-          gh issue comment 6 --repo ageyssel/sercoprev-web --body-file /tmp/diagnosis.md
-
-      - name: Enforce successful release
-        if: always()
-        shell: bash
-        env:
-          INSTALL_CODE: ${{ steps.release.outputs.install_code }}
-          BUILD_CODE: ${{ steps.release.outputs.build_code }}
-          DEPLOY_CODE: ${{ steps.release.outputs.deploy_code }}
-          HEALTHY: ${{ steps.verify.outputs.healthy }}
-        run: |
-          test "${INSTALL_CODE:-99}" = '0'
-          test "${BUILD_CODE:-99}" = '0'
-          test "${DEPLOY_CODE:-99}" = '0'
-          test "${HEALTHY:-false}" = 'true'
+Solo se comprobó la existencia de cada secreto. Ningún valor fue leído, impreso ni transferido."
