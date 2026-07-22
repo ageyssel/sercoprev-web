@@ -118,8 +118,9 @@ jobs:
               && [ "$login_status" = '200' ] \
               && [ "$health_status" = '200' ] \
               && grep -qi 'SERCOPREV' /tmp/home.html \
-              && grep -qi 'Acceso Portal' /tmp/login.html \
-              && grep -q '"status":"ok"' /tmp/health.json; then
+              && grep -qi 'Ingrese a su portal' /tmp/login.html \
+              && grep -q '"status":"ok"' /tmp/health.json \
+              && grep -q '"operationalSchema":true' /tmp/health.json; then
               healthy=true
               break
             fi
@@ -127,5 +128,8 @@ jobs:
             sleep 5
           done
 
+          echo "GET / => ${home_status:-unknown}"
+          echo "GET /login => ${login_status:-unknown}"
+          echo "GET /api/health => ${health_status:-unknown}"
           cat /tmp/health.json 2>/dev/null || true
           test "$healthy" = 'true'
