@@ -1,0 +1,117 @@
+name: Verify production now
+
+on:
+  push:
+    branches: [ops/verify-production-now]
+    paths:
+      - .github/workflows/verify-production-now.yml
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Verify Cloudflare and Supabase production
+        shell: bash
+        run: |
+          set +e
+
+          ready=false
+          home_status='000'
+          login_status='000'
+          health_status='000'
+          apex_login_status='000'
+          apex_health_status='000'
+
+          for attempt in $(seq 1 60); do
+            echo "Verification attempt $attempt/60"
+
+            home_status=$(curl --silent --show-error --location --max-time 20 \
+              --dump-header /tmp/home.headers \
+              --output /tmp/home.html \
+              --write-out '%{http_code}' \
+              'https://www.sercoprev.cl/' || true)
+
+            login_status=$(curl --silent --show-error --location --max-time 20 \
+              --dump-header /tmp/login.headers \
+              --output /tmp/login.html \
+              --write-out '%{http_code}' \
+              'https://www.sercoprev.cl/login' || true)
+
+            health_status=$(curl --silent --show-error --location --max-time 20 \
+              --dump-header /tmp/health.headers \
+              --output /tmp/health.json \
+              --write-out '%{http_code}' \
+              'https://www.sercoprev.cl/api/health' || true)
+
+            if [ "$home_status" = '200' ] \
+              && [ "$login_status" = '200' ] \
+              && [ "$health_status" = '200' ] \
+              && grep -qi 'SERCOPREV' /tmp/home.html \
+              && grep -qi 'Acceso Portal' /tmp/login.html \
+              && grep -q '"status":"ok"' /tmp/health.json \
+              && grep -qi 'content-security-policy:' /tmp/login.headers \
+              && grep -qi 'static.cloudflareinsights.com' /tmp/login.headers \
+              && grep -qi 'x-robots-tag:.*noindex' /tmp/health.headers; then
+              ready=true
+              break
+            fi
+
+            echo 'Production not ready yet.'
+            cat /tmp/health.json 2>/dev/null || true
+            sleep 10
+          done
+
+          if [ "$ready" = 'true' ]; then
+            apex_login_status=$(curl --silent --show-error --location --max-time 20 \
+              --output /tmp/apex-login.html \
+              --write-out '%{http_code}' \
+              'https://sercoprev.cl/login' || true)
+
+            apex_health_status=$(curl --silent --show-error --location --max-time 20 \
+              --output /tmp/apex-health.json \
+              --write-out '%{http_code}' \
+              'https://sercoprev.cl/api/health' || true)
+
+            if [ "$apex_login_status" != '200' ] \
+              || [ "$apex_health_status" != '200' ] \
+              || ! grep -qi 'Acceso Portal' /tmp/apex-login.html \
+              || ! grep -q '"status":"ok"' /tmp/apex-health.json; then
+              ready=false
+            fi
+          fi
+
+          {
+            echo '<!-- sercoprev-production-verification -->'
+            if [ "$ready" = 'true' ]; then
+              echo '## ✅ Verificación productiva completada'
+            else
+              echo '## ❌ Verificación productiva fallida'
+            fi
+            echo
+            echo "- www portada: HTTP $home_status"
+            echo "- www login: HTTP $login_status"
+            echo "- www health: HTTP $health_status"
+            echo "- dominio raíz login: HTTP $apex_login_status"
+            echo "- dominio raíz health: HTTP $apex_health_status"
+            echo
+            echo '### Respuesta segura de health'
+            echo '```json'
+            cat /tmp/health.json 2>/dev/null || echo '{"status":"unavailable"}'
+            echo
+            echo '```'
+            echo
+            echo "Commit productivo esperado: 23bb81141f9c05030e188be785b234dc8591be76"
+          } > /tmp/production-verification.md
+
+          gh pr comment 4 --repo ageyssel/sercoprev-web --body-file /tmp/production-verification.md
+
+          if [ "$ready" != 'true' ]; then
+            exit 1
+          fi
