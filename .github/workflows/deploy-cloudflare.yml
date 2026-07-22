@@ -20,9 +20,17 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: 9021b712f9a73815e6b333a4870e0021
       SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      WHATSAPP_ACCESS_TOKEN: ${{ secrets.WHATSAPP_ACCESS_TOKEN }}
+      WHATSAPP_PHONE_NUMBER_ID: ${{ secrets.WHATSAPP_PHONE_NUMBER_ID }}
       NEXT_PUBLIC_SUPABASE_URL: https://kxrxlygnhukfmdgqhoaz.supabase.co
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_LpXB0WEd-O8Y5ARxeEZ2hQ_xhw3jP1n
       APP_BASE_URL: https://www.sercoprev.cl
+      RESEND_FROM_EMAIL: SERCOPREV <portal@sercoprev.cl>
+      NOTIFICATION_ADMIN_EMAILS: ${{ vars.NOTIFICATION_ADMIN_EMAILS || 'contabilidad@sercoprev.cl' }}
+      WHATSAPP_API_BASE_URL: ${{ vars.WHATSAPP_API_BASE_URL || 'https://graph.facebook.com/v23.0' }}
+      WHATSAPP_TEMPLATE_LANGUAGE: ${{ vars.WHATSAPP_TEMPLATE_LANGUAGE || 'es_CL' }}
+      WHATSAPP_DOCUMENT_REQUEST_TEMPLATE: ${{ vars.WHATSAPP_DOCUMENT_REQUEST_TEMPLATE || 'sercoprev_solicitud_documental' }}
     steps:
       - name: Validate deployment credentials
         shell: bash
@@ -40,6 +48,16 @@ jobs:
           fi
 
           echo 'Required deployment credentials are available. Their values remain masked.'
+          if [ -n "${RESEND_API_KEY:-}" ]; then
+            echo 'Transactional email credentials are configured.'
+          else
+            echo '::warning title=Email notifications disabled::RESEND_API_KEY is not configured; platform operations will continue and omitted notifications will be logged.'
+          fi
+          if [ -n "${WHATSAPP_ACCESS_TOKEN:-}" ] && [ -n "${WHATSAPP_PHONE_NUMBER_ID:-}" ]; then
+            echo 'WhatsApp notification credentials are configured.'
+          else
+            echo '::warning title=WhatsApp notifications disabled::Configure WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID to activate document-request messages.'
+          fi
 
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -81,10 +99,16 @@ jobs:
           import os
           from pathlib import Path
 
-          path = Path('/tmp/sercoprev-cloudflare-secrets.json')
-          path.write_text(json.dumps({
+          values = {
               'SUPABASE_SECRET_KEY': os.environ['SUPABASE_SECRET_KEY'],
-          }))
+          }
+          for optional_name in ('RESEND_API_KEY', 'WHATSAPP_ACCESS_TOKEN', 'WHATSAPP_PHONE_NUMBER_ID'):
+              optional_value = os.environ.get(optional_name, '').strip()
+              if optional_value:
+                  values[optional_name] = optional_value
+
+          path = Path('/tmp/sercoprev-cloudflare-secrets.json')
+          path.write_text(json.dumps(values))
           path.chmod(0o600)
           PY
 
