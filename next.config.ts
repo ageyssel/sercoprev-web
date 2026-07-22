@@ -10,8 +10,8 @@ const contentSecurityPolicy = [
   "script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com",
   "style-src 'self' 'unsafe-inline'",
   "font-src 'self' data:",
-  "img-src 'self' data: blob: https://images.unsplash.com",
-  "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://cloudflareinsights.com",
+  "img-src 'self' data: blob:",
+  "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://cloudflareinsights.com https://api.resend.com",
   "worker-src 'self' blob:",
   'upgrade-insecure-requests',
 ].join('; ')
@@ -27,17 +27,9 @@ const securityHeaders = [
 ]
 
 const nextConfig: NextConfig = {
-  images: {
-    remotePatterns: [
-      {
-        protocol: 'https',
-        hostname: 'images.unsplash.com',
-      },
-    ],
-  },
   experimental: {
     serverActions: {
-      bodySizeLimit: '2mb',
+      bodySizeLimit: '8mb',
       allowedOrigins: ['sercoprev.cl', 'www.sercoprev.cl'],
     },
   },
