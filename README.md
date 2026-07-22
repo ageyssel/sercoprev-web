@@ -86,7 +86,7 @@ El workflow de CI también:
 - genera el Worker mediante OpenNext;
 - mide el bundle con `wrangler deploy --dry-run`;
 - rechaza bundles superiores a 3000 KiB comprimidos;
-- inicia el Worker en `workerd` y exige HTTP 200 en `/`.
+- inicia el Worker en `workerd` y exige HTTP 200 en `/` y `/login`.
 
 El build de producción utiliza Webpack porque el bundle generado por Turbopack excedía el límite del plan Free para esta aplicación.
 
@@ -105,4 +105,12 @@ npx wrangler secret put RESEND_API_KEY
 
 Los directorios `.next` y `.open-next` son artefactos generados y nunca deben versionarse.
 
-La rama principal no debe recibir cambios directos. Use ramas de trabajo y pull requests revisables.
+Después de cada push a `main`, el workflow `Verify production` espera el despliegue de Cloudflare y comprueba:
+
+- portada y login en `sercoprev.cl` y `www.sercoprev.cl`;
+- cabeceras de seguridad;
+- conexión administrativa real con Supabase;
+- existencia del administrador inicial;
+- bucket privado `documentos`.
+
+La rama principal no debe recibir cambios directos salvo una operación de recuperación productiva expresamente autorizada. Para el trabajo normal, use ramas y pull requests revisables.
