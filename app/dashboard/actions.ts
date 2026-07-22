@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
+import { notifyAdmins } from '@/lib/notifications'
 import { createAdminClient } from '@/utils/supabase/admin'
 import { createClient } from '@/utils/supabase/server'
 
@@ -48,7 +49,7 @@ export async function responderSolicitudDocumento(
 
     const { data: empresa, error: companyError } = await supabase
       .from('empresas')
-      .select('id, es_admin')
+      .select('id, es_admin, razon_social, nombre_fantasia')
       .eq('user_id', user.id)
       .single()
 
@@ -113,8 +114,31 @@ export async function responderSolicitudDocumento(
       metadata: { documento_id: document.id, nombre: file.name },
     })
 
+    await notifyAdmins({
+      adminClient,
+      empresaId: empresa.id,
+      event: 'cliente_cargo_antecedente',
+      subject: `Antecedente recibido: ${request.titulo}`,
+      title: 'Un cliente respondió una solicitud documental',
+      paragraphs: [
+        `${empresa.nombre_fantasia || empresa.razon_social} cargó un archivo para atender una solicitud pendiente.`,
+        'El estado fue actualizado automáticamente a Recibido y el documento ya está disponible para revisión.',
+      ],
+      details: [
+        { label: 'Empresa', value: empresa.nombre_fantasia || empresa.razon_social },
+        { label: 'Solicitud', value: request.titulo },
+        { label: 'Archivo', value: file.name.slice(0, 255) },
+        { label: 'Categoría', value: request.categoria },
+        { label: 'Periodo', value: request.periodo },
+      ],
+      ctaLabel: 'Revisar ficha del cliente',
+      ctaUrl: `${process.env.APP_BASE_URL?.trim() || 'https://www.sercoprev.cl'}/admin/clientes/${empresa.id}`,
+    })
+
     revalidatePath('/dashboard')
     revalidatePath(`/admin/clientes/${empresa.id}`)
+    revalidatePath('/admin/operaciones')
+    revalidatePath('/admin/notificaciones')
     return { status: 'success', message: 'Documento enviado correctamente. SERCOPREV lo revisará.' }
   } catch (error) {
     console.error('Error al responder solicitud documental:', error)
