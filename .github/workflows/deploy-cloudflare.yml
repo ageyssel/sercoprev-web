@@ -1,5 +1,6 @@
 name: Deploy Cloudflare
 
+# Production deployment enabled after provisioning CLOUDFLARE_API_TOKEN.
 on:
   push:
     branches: [main]
