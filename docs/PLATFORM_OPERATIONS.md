@@ -2,7 +2,7 @@
 
 ## Objetivo
 
-La plataforma organiza la relación entre SERCOPREV, su equipo y cada empresa cliente. No reemplaza el criterio profesional ni los comprobantes oficiales; centraliza trabajo, fechas, documentos y estados.
+La plataforma organiza la relación entre SERCOPREV, su equipo y cada empresa cliente. No reemplaza el criterio profesional ni los comprobantes oficiales; centraliza trabajo, fechas, documentos, cobros, consultas y estados.
 
 ## Flujo recomendado para un nuevo cliente
 
@@ -10,11 +10,12 @@ La plataforma organiza la relación entre SERCOPREV, su equipo y cada empresa cl
 2. Entregar la contraseña temporal por un canal seguro.
 3. Abrir la ficha 360° y completar datos legales, tributarios y de contacto.
 4. Asignar contador y ejecutivo responsable.
-5. Agregar los servicios contratados y honorarios.
-6. Crear las obligaciones del primer periodo.
-7. Crear solicitudes de documentos para antecedentes pendientes.
-8. Publicar documentos iniciales o importar registros financieros.
-9. Confirmar que el cliente cambió su contraseña y accede al portal.
+5. Agregar contactos autorizados de la empresa.
+6. Agregar los servicios contratados y honorarios acordados.
+7. Crear las obligaciones del primer periodo.
+8. Crear solicitudes de documentos para antecedentes pendientes.
+9. Publicar documentos iniciales o importar registros financieros.
+10. Confirmar que el cliente cambió su contraseña y accede al portal.
 
 ## Estados de cliente
 
@@ -102,6 +103,73 @@ Límites:
 
 Las importaciones agregan registros. No eliminan ni reemplazan automáticamente información anterior.
 
+## Honorarios y cobranza
+
+Cada registro de honorarios debe representar un cobro identificable por empresa y periodo.
+
+Datos mínimos:
+
+- periodo;
+- concepto;
+- monto;
+- fecha de vencimiento;
+- estado.
+
+Estados:
+
+- **Pendiente:** emitido o informado, todavía no pagado.
+- **Pagado:** pago confirmado; el sistema registra la fecha.
+- **Vencido:** plazo superado y requiere seguimiento.
+- **Anulado:** cobro sin efecto.
+
+Buenas prácticas:
+
+- no marcar como pagado hasta confirmar el abono;
+- registrar observaciones cuando el monto difiera del honorario mensual;
+- revisar diariamente los vencidos;
+- usar la ficha del cliente para crear el cobro y el módulo transversal para seguimiento;
+- responder dudas de cobro mediante una consulta con categoría **Cobranza**.
+
+## Consultas de clientes
+
+Las consultas evitan que acuerdos y respuestas importantes queden dispersos en correo o WhatsApp.
+
+Categorías:
+
+- Contabilidad
+- Impuestos
+- Remuneraciones
+- Documentos
+- Legal
+- Cobranza
+- Consulta general
+
+Estados:
+
+1. Abierto
+2. En revisión
+3. Esperando cliente
+4. Resuelto
+5. Cerrado
+
+Reglas recomendadas:
+
+- responder desde el hilo del portal;
+- indicar acciones, responsables y fechas;
+- usar **Esperando cliente** cuando falte información externa;
+- usar **Resuelto** cuando la respuesta esté entregada, pero el cliente aún pueda complementar;
+- usar **Cerrado** cuando no deban admitirse nuevas respuestas;
+- una respuesta del cliente puede reabrir automáticamente una consulta resuelta.
+
+## Contactos empresariales
+
+La ficha complementaria permite registrar contactos adicionales sin crearles acceso automático al portal.
+
+- marque solo un contacto principal;
+- indique cargo y datos vigentes;
+- use **recibe notificaciones** únicamente para personas autorizadas;
+- no utilice este módulo para almacenar contraseñas, claves tributarias ni datos innecesarios.
+
 ## Leads
 
 El formulario público crea prospectos con estado **Nuevo**. El flujo comercial recomendado es:
@@ -119,17 +187,30 @@ Los datos solo deben usarse para responder la solicitud y gestionar la relación
 - obligaciones vencidas o próximas;
 - tareas críticas y bloqueadas;
 - solicitudes recibidas u observadas;
+- honorarios vencidos;
+- consultas nuevas o reabiertas;
 - clientes que requieren atención;
 - prospectos nuevos.
+
+## Revisión semanal
+
+- carga de trabajo por responsable;
+- consultas esperando respuesta;
+- clientes sin actividad reciente;
+- cobros pendientes;
+- solicitudes documentales próximas a vencer;
+- incorporaciones incompletas.
 
 ## Revisión mensual
 
 - actualizar estado de impuestos;
 - verificar servicios y honorarios;
 - archivar obligaciones completadas mediante su estado;
-- revisar clientes sin actividad;
+- revisar contactos autorizados;
 - confirmar documentos y registros publicados;
-- revisar auditoría ante incidencias.
+- revisar auditoría ante incidencias;
+- cerrar consultas ya resueltas;
+- actualizar clientes suspendidos o archivados.
 
 ## Seguridad
 
@@ -139,4 +220,5 @@ Los datos solo deben usarse para responder la solicitud y gestionar la relación
 - verificar empresa antes de cargar o cambiar información;
 - descargar documentos solo desde el portal;
 - cerrar sesión en equipos compartidos;
+- registrar únicamente datos necesarios para el servicio;
 - reportar accesos o acciones sospechosas.
