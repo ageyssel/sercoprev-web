@@ -24,6 +24,7 @@ jobs:
       NEXT_PUBLIC_SUPABASE_URL: https://kxrxlygnhukfmdgqhoaz.supabase.co
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_LpXB0WEd-O8Y5ARxeEZ2hQ_xhw3jP1n
       APP_BASE_URL: https://www.sercoprev.cl
+      SUPABASE_SECRET_KEY: sb_secret_ci_placeholder
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -121,5 +122,13 @@ jobs:
             tail -n 300 /tmp/sercoprev-preview.log
             exit 1
           fi
-
           grep -qi 'Acceso Portal' /tmp/sercoprev-login.html
+
+          health_status=$(curl --silent --show-error --output /tmp/sercoprev-health.json --write-out '%{http_code}' http://127.0.0.1:8787/api/health || true)
+          echo "GET /api/health => HTTP $health_status"
+          cat /tmp/sercoprev-health.json
+          if [ "$health_status" != "200" ]; then
+            tail -n 300 /tmp/sercoprev-preview.log
+            exit 1
+          fi
+          grep -q '"status":"ok"' /tmp/sercoprev-health.json
