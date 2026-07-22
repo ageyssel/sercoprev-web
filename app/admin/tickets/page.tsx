@@ -4,7 +4,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge'
 import { formatDate } from '@/lib/format'
 import { createClient } from '@/utils/supabase/server'
 import { AdminTicketReplyForm } from '@/app/admin/components/BillingSupportForms'
-import { cambiarEstadoTicket } from '@/app/support-actions'
+import { cambiarEstadoTicketNotificado } from '@/app/notified-support-actions'
 
 export const dynamic = 'force-dynamic'
 
@@ -67,7 +67,7 @@ export default async function TicketsPage({ searchParams }: { searchParams: Prom
             </div>
 
             {ticket.estado !== 'Cerrado' && <AdminTicketReplyForm ticketId={ticket.id} companyId={ticket.empresa_id} />}
-            <form action={cambiarEstadoTicket} className="mt-4 flex flex-col gap-2 border-t border-slate-100 pt-4 sm:flex-row"><input type="hidden" name="ticket_id" value={ticket.id} /><input type="hidden" name="empresa_id" value={ticket.empresa_id} /><select name="estado" defaultValue={ticket.estado} className="h-10 flex-1 rounded-xl border border-slate-300 px-3 text-xs font-bold">{states.filter((item) => item !== 'Todos').map((item) => <option key={item}>{item}</option>)}</select><button className="h-10 rounded-xl bg-[#0f2438] px-4 text-xs font-black text-white">Actualizar estado</button></form>
+            <form action={cambiarEstadoTicketNotificado} className="mt-4 flex flex-col gap-2 border-t border-slate-100 pt-4 sm:flex-row"><input type="hidden" name="ticket_id" value={ticket.id} /><input type="hidden" name="empresa_id" value={ticket.empresa_id} /><select name="estado" defaultValue={ticket.estado} className="h-10 flex-1 rounded-xl border border-slate-300 px-3 text-xs font-bold">{states.filter((item) => item !== 'Todos').map((item) => <option key={item}>{item}</option>)}</select><button className="h-10 rounded-xl bg-[#0f2438] px-4 text-xs font-black text-white">Actualizar estado</button></form>
           </article>
         ))}
       </section>
