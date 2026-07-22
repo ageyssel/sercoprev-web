@@ -1,0 +1,53 @@
+name: Fix platform static issues
+
+on:
+  push:
+    branches: [feature/platform-redesign-operational-core]
+    paths:
+      - .github/workflows/fix-platform-static.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: feature/platform-redesign-operational-core
+          fetch-depth: 0
+
+      - name: Apply deterministic fixes
+        shell: bash
+        run: |
+          python <<'PY'
+          from pathlib import Path
+
+          workspace = Path('app/admin/clientes/[id]/page.tsx')
+          text = workspace.read_text()
+          duplicate = "  razon_social: string\n  nombre_fantasia: string | null\n  rut: string\n  nombre_fantasia: string | null\n"
+          replacement = "  razon_social: string\n  nombre_fantasia: string | null\n  rut: string\n"
+          if duplicate not in text:
+              raise SystemExit('Expected duplicate Company property was not found')
+          workspace.write_text(text.replace(duplicate, replacement, 1))
+
+          actions = Path('app/admin/operational-actions.ts')
+          text = actions.read_text()
+          old = "  adminClient: ReturnType<typeof import('@/utils/supabase/admin').createAdminClient>,"
+          new = "  adminClient: Awaited<ReturnType<typeof requireAdmin>>['adminClient'],"
+          if old not in text:
+              raise SystemExit('Expected admin client type was not found')
+          actions.write_text(text.replace(old, new, 1))
+          PY
+
+      - name: Commit fixes
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/admin/clientes/'[id]'/page.tsx app/admin/operational-actions.ts
+          git commit -m "Fix platform static type definitions"
+          git push origin HEAD:feature/platform-redesign-operational-core
