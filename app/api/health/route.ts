@@ -45,7 +45,7 @@ export async function GET() {
       administrator = !authError && Boolean(authUser.user)
     }
 
-    const [companySchema, leadsSchema, obligationsSchema, tasksSchema, requestsSchema, servicesSchema, auditSchema] = await Promise.all([
+    const schemaChecks = await Promise.all([
       supabase.from('empresas').select('id, estado_cliente, contador_asignado, plan_servicio').limit(1),
       supabase.from('leads').select('id').limit(1),
       supabase.from('obligaciones').select('id').limit(1),
@@ -53,17 +53,13 @@ export async function GET() {
       supabase.from('solicitudes_documentos').select('id').limit(1),
       supabase.from('servicios_contratados').select('id').limit(1),
       supabase.from('auditoria_eventos').select('id').limit(1),
+      supabase.from('honorarios').select('id').limit(1),
+      supabase.from('tickets').select('id').limit(1),
+      supabase.from('ticket_mensajes').select('id').limit(1),
+      supabase.from('contactos_empresa').select('id').limit(1),
     ])
 
-    operationalSchema = [
-      companySchema.error,
-      leadsSchema.error,
-      obligationsSchema.error,
-      tasksSchema.error,
-      requestsSchema.error,
-      servicesSchema.error,
-      auditSchema.error,
-    ].every((error) => !error)
+    operationalSchema = schemaChecks.every((result) => !result.error)
 
     const { data: buckets, error: bucketError } = await supabase.storage.listBuckets()
     documentStorage = !bucketError && Boolean(
