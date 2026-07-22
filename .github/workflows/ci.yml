@@ -79,7 +79,7 @@ jobs:
               raise SystemExit("El Worker supera el margen seguro del plan Free de Cloudflare")
           PY
 
-      - name: Smoke test in workerd
+      - name: Smoke test public routes in workerd
         shell: bash
         run: |
           set -euo pipefail
@@ -87,22 +87,39 @@ jobs:
           preview_pid=$!
           trap 'kill "$preview_pid" 2>/dev/null || true' EXIT
 
+          ready=false
           for attempt in $(seq 1 60); do
             if ! kill -0 "$preview_pid" 2>/dev/null; then
               echo "Cloudflare preview stopped unexpectedly"
-              tail -n 160 /tmp/sercoprev-preview.log
+              tail -n 240 /tmp/sercoprev-preview.log
               exit 1
             fi
 
             status=$(curl --silent --show-error --output /tmp/sercoprev-home.html --write-out '%{http_code}' http://127.0.0.1:8787/ || true)
             if [ "$status" = "200" ]; then
-              grep -qi 'SERCOPREV' /tmp/sercoprev-home.html
-              exit 0
+              ready=true
+              break
             fi
-
             sleep 1
           done
 
-          echo "Cloudflare preview did not return HTTP 200"
-          tail -n 160 /tmp/sercoprev-preview.log
-          exit 1
+          if [ "$ready" != "true" ]; then
+            echo "Cloudflare preview did not return HTTP 200 for /"
+            tail -n 240 /tmp/sercoprev-preview.log
+            exit 1
+          fi
+
+          grep -qi 'SERCOPREV' /tmp/sercoprev-home.html
+
+          login_status=$(curl --silent --show-error --output /tmp/sercoprev-login.html --write-out '%{http_code}' http://127.0.0.1:8787/login || true)
+          echo "GET /login => HTTP $login_status"
+          if [ "$login_status" != "200" ]; then
+            echo "Login response:"
+            cat /tmp/sercoprev-login.html || true
+            echo
+            echo "Cloudflare preview log:"
+            tail -n 300 /tmp/sercoprev-preview.log
+            exit 1
+          fi
+
+          grep -qi 'Acceso Portal' /tmp/sercoprev-login.html
