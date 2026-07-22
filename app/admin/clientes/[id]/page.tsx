@@ -25,7 +25,6 @@ type Company = {
   razon_social: string
   nombre_fantasia: string | null
   rut: string
-  nombre_fantasia: string | null
   tipo_sociedad: string | null
   giro: string | null
   regimen_tributario: string | null

@@ -48,7 +48,7 @@ function safeFilename(value: string) {
 }
 
 async function audit(
-  adminClient: ReturnType<typeof import('@/utils/supabase/admin').createAdminClient>,
+  adminClient: Awaited<ReturnType<typeof requireAdmin>>['adminClient'],
   actorUserId: string,
   input: { empresaId?: string | null; accion: string; entidad: string; entidadId?: string | null; metadata?: Record<string, unknown> },
 ) {
