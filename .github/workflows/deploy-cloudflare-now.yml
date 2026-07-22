@@ -1,4 +1,4 @@
-name: Install Supabase secret through Cloudflare API
+name: Inspect Wrangler version commands
 
 on:
   push:
@@ -11,127 +11,45 @@ permissions:
   issues: write
 
 jobs:
-  install-and-verify:
+  inspect:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
       GH_TOKEN: ${{ github.token }}
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: 9021b712f9a73815e6b333a4870e0021
-      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-      WORKER_NAME: sercoprev-web
     steps:
-      - name: Confirm credential availability
+      - name: Checkout production branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: main
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund --silent
+
+      - name: Capture command help
         shell: bash
         run: |
           set -euo pipefail
-          test -n "${CLOUDFLARE_API_TOKEN:-}"
-          test -n "${SUPABASE_SECRET_KEY:-}"
-          gh issue comment 6 --repo ageyssel/sercoprev-web --body \
-            '⏳ Instalación directa mediante la API oficial de secretos de Cloudflare iniciada. Ningún valor sensible será registrado.'
-
-      - name: Add secret to Worker
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          python - <<'PY'
-          import json
-          import os
-          from pathlib import Path
-
-          Path('/tmp/cloudflare-secret.json').write_text(json.dumps({
-              'name': 'SUPABASE_SECRET_KEY',
-              'text': os.environ['SUPABASE_SECRET_KEY'],
-              'type': 'secret_text',
-          }))
-          PY
-
-          http_status=$(curl --silent --show-error --max-time 60 \
-            --output /tmp/cloudflare-response.json \
-            --write-out '%{http_code}' \
-            --request PUT \
-            --header "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-            --header 'Content-Type: application/json' \
-            --data-binary @/tmp/cloudflare-secret.json \
-            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME/secrets")
-
-          rm -f /tmp/cloudflare-secret.json
-
-          success=$(jq -r '.success // false' /tmp/cloudflare-response.json)
-          if [ "$http_status" != '200' ] || [ "$success" != 'true' ]; then
-            error_code=$(jq -r '.errors[0].code // "unknown"' /tmp/cloudflare-response.json)
-            error_message=$(jq -r '.errors[0].message // "Cloudflare rechazó la solicitud"' /tmp/cloudflare-response.json | sed -E 's/[A-Za-z0-9_-]{24,}/[REDACTED]/g')
-            gh issue comment 6 --repo ageyssel/sercoprev-web --body \
-              "❌ Cloudflare no pudo instalar el secreto. HTTP $http_status, código $error_code: $error_message"
-            exit 1
-          fi
-
-          rm -f /tmp/cloudflare-response.json
-          gh issue comment 6 --repo ageyssel/sercoprev-web --body \
-            '✅ Cloudflare confirmó la instalación de `SUPABASE_SECRET_KEY` en `sercoprev-web`. El valor nunca fue mostrado.'
-
-      - name: Confirm secret binding exists
-        shell: bash
-        run: |
-          set -euo pipefail
-          http_status=$(curl --silent --show-error --max-time 30 \
-            --output /tmp/secret-binding.json \
-            --write-out '%{http_code}' \
-            --header "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME/secrets/SUPABASE_SECRET_KEY")
-
-          binding_name=$(jq -r '.result.name // ""' /tmp/secret-binding.json)
-          rm -f /tmp/secret-binding.json
-          test "$http_status" = '200'
-          test "$binding_name" = 'SUPABASE_SECRET_KEY'
-
-      - name: Verify production and Supabase
-        shell: bash
-        run: |
-          set -euo pipefail
-          healthy=false
-          health_status='000'
-
-          for attempt in $(seq 1 30); do
-            health_status=$(curl --silent --show-error --location --max-time 20 \
-              --output /tmp/health.json --write-out '%{http_code}' \
-              'https://www.sercoprev.cl/api/health' || true)
-
-            if [ "$health_status" = '200' ] && grep -q '"status":"ok"' /tmp/health.json; then
-              healthy=true
-              break
-            fi
-
-            sleep 5
-          done
-
-          home_status=$(curl --silent --show-error --location --max-time 20 \
-            --output /tmp/home.html --write-out '%{http_code}' \
-            'https://www.sercoprev.cl/' || true)
-          login_status=$(curl --silent --show-error --location --max-time 20 \
-            --output /tmp/login.html --write-out '%{http_code}' \
-            'https://www.sercoprev.cl/login' || true)
+          npx wrangler versions secret put --help > /tmp/secret-help.txt 2>&1
+          npx wrangler versions deploy --help > /tmp/deploy-help.txt 2>&1
 
           {
-            if [ "$healthy" = true ]; then
-              echo '## ✅ Supabase y producción completamente operativos'
-            else
-              echo '## ⚠️ Secreto instalado; quedan componentes Supabase pendientes'
-            fi
+            echo '## Sintaxis Wrangler instalada en el proyecto'
             echo
-            echo "- portada: HTTP $home_status"
-            echo "- login: HTTP $login_status"
-            echo "- health: HTTP $health_status"
-            echo
-            echo '### Respuesta segura de health'
-            echo '```json'
-            cat /tmp/health.json 2>/dev/null || echo '{"status":"unavailable"}'
-            echo
+            echo '### `versions secret put`'
+            echo '```text'
+            sed -n '1,160p' /tmp/secret-help.txt
             echo '```'
-          } > /tmp/final-health.md
+            echo
+            echo '### `versions deploy`'
+            echo '```text'
+            sed -n '1,180p' /tmp/deploy-help.txt
+            echo '```'
+          } > /tmp/help.md
 
-          gh issue comment 6 --repo ageyssel/sercoprev-web --body-file /tmp/final-health.md
-
-          test "$home_status" = '200'
-          test "$login_status" = '200'
+          gh issue comment 6 --repo ageyssel/sercoprev-web --body-file /tmp/help.md
