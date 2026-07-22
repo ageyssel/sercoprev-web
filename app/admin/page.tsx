@@ -53,8 +53,11 @@ function companyName(value: RelatedCompany) {
 
 export default async function AdminPage() {
   const supabase = await createClient()
-  const today = new Date().toISOString().slice(0, 10)
-  const inThirtyDays = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10)
+  const todayDate = new Date()
+  const today = todayDate.toISOString().slice(0, 10)
+  const inThirtyDaysDate = new Date(todayDate)
+  inThirtyDaysDate.setUTCDate(inThirtyDaysDate.getUTCDate() + 30)
+  const inThirtyDays = inThirtyDaysDate.toISOString().slice(0, 10)
 
   const [clientsCount, obligationsCount, overdueCount, requestsCount, leadsCount, obligationsResult, tasksResult, leadsResult, clientsResult] = await Promise.all([
     supabase.from('empresas').select('id', { count: 'exact', head: true }).eq('es_admin', false).neq('estado_cliente', 'Archivado'),
