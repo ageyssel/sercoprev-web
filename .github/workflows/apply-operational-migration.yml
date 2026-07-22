@@ -56,6 +56,7 @@ jobs:
           migration_paths = [
               Path('supabase/migrations/202607220001_operational_platform.sql'),
               Path('supabase/migrations/202607220002_operational_trigger_fix.sql'),
+              Path('supabase/migrations/202607220003_billing_support.sql'),
           ]
 
           for path in migration_paths:
@@ -94,7 +95,11 @@ jobs:
             'tareas?select=id&limit=1' \
             'solicitudes_documentos?select=id&limit=1' \
             'servicios_contratados?select=id&limit=1' \
-            'auditoria_eventos?select=id&limit=1'; do
+            'auditoria_eventos?select=id&limit=1' \
+            'honorarios?select=id&limit=1' \
+            'tickets?select=id&limit=1' \
+            'ticket_mensajes?select=id&limit=1' \
+            'contactos_empresa?select=id&limit=1'; do
             status=$(curl --silent --show-error --output /tmp/supabase-check.json --write-out '%{http_code}' \
               "${SUPABASE_URL}/rest/v1/${resource}" \
               -H "apikey: ${SUPABASE_SECRET_KEY}" \
@@ -109,4 +114,4 @@ jobs:
       - name: Report success
         run: |
           gh pr comment 10 --repo ageyssel/sercoprev-web --body \
-            '✅ Migraciones operativas aplicadas y verificadas en Supabase. Se confirmaron las columnas ampliadas de `empresas` y las tablas `leads`, `obligaciones`, `tareas`, `solicitudes_documentos`, `servicios_contratados` y `auditoria_eventos`.'
+            '✅ Migraciones operativas aplicadas y verificadas en Supabase. Se confirmaron clientes ampliados, leads, obligaciones, tareas, solicitudes, servicios, auditoría, honorarios, consultas y contactos empresariales.'
