@@ -1,6 +1,5 @@
-name: Deploy Cloudflare now
+name: Deploy Cloudflare diagnostics
 
-# Re-run after provisioning CLOUDFLARE_API_TOKEN.
 on:
   push:
     branches: [ops/verify-production-now]
@@ -10,12 +9,11 @@ on:
 permissions:
   contents: read
   issues: write
-  pull-requests: write
 
 jobs:
   deploy:
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 30
     env:
       GH_TOKEN: ${{ github.token }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -26,19 +24,25 @@ jobs:
     steps:
       - name: Report start
         run: |
-          gh pr comment 4 --repo ageyssel/sercoprev-web --body \
-            '⏳ Despliegue directo con Wrangler iniciado desde el último commit de `main`.'
+          gh issue comment 6 --repo ageyssel/sercoprev-web --body \
+            '⏳ Ejecución autenticada iniciada. Se comprobará la credencial, compilación, despliegue y salud productiva.'
 
-      - name: Verify Cloudflare credential availability
+      - name: Check credential
+        id: auth
         shell: bash
         run: |
-          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
-            gh pr comment 4 --repo ageyssel/sercoprev-web --body \
-              '❌ El repositorio no tiene disponible el secreto `CLOUDFLARE_API_TOKEN`; no fue posible realizar el despliegue directo.'
+          if [ -n "${CLOUDFLARE_API_TOKEN:-}" ]; then
+            echo 'available=true' >> "$GITHUB_OUTPUT"
+            gh issue comment 6 --repo ageyssel/sercoprev-web --body \
+              '✅ GitHub Actions recibió `CLOUDFLARE_API_TOKEN`. El valor permanece oculto.'
+          else
+            echo 'available=false' >> "$GITHUB_OUTPUT"
+            gh issue comment 6 --repo ageyssel/sercoprev-web --body \
+              '❌ GitHub Actions no recibió `CLOUDFLARE_API_TOKEN`.'
             exit 1
           fi
 
-      - name: Checkout production branch
+      - name: Checkout production
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           ref: main
@@ -49,20 +53,48 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Install dependencies
-        run: npm ci --no-audit --no-fund --silent
-
-      - name: Build Cloudflare Worker
-        run: npm run build:cloudflare
-
-      - name: Deploy without replacing runtime variables
-        run: npx opennextjs-cloudflare deploy -- --keep-vars
-
-      - name: Verify deployed production
+      - name: Install, build and deploy
+        id: release
         shell: bash
         run: |
-          set -euo pipefail
+          set +e
+
+          npm ci --no-audit --no-fund --silent > /tmp/install.log 2>&1
+          install_code=$?
+
+          build_code=99
+          deploy_code=99
+
+          if [ "$install_code" -eq 0 ]; then
+            npm run build:cloudflare > /tmp/build.log 2>&1
+            build_code=$?
+          else
+            echo 'Build omitted because installation failed.' > /tmp/build.log
+          fi
+
+          if [ "$build_code" -eq 0 ]; then
+            npx opennextjs-cloudflare deploy -- --keep-vars > /tmp/deploy.log 2>&1
+            deploy_code=$?
+          else
+            echo 'Deploy omitted because build failed.' > /tmp/deploy.log
+          fi
+
+          echo "install_code=$install_code" >> "$GITHUB_OUTPUT"
+          echo "build_code=$build_code" >> "$GITHUB_OUTPUT"
+          echo "deploy_code=$deploy_code" >> "$GITHUB_OUTPUT"
+          echo "production_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Verify production
+        id: verify
+        if: steps.release.outputs.deploy_code == '0'
+        shell: bash
+        run: |
+          set +e
           healthy=false
+          home_status=000
+          login_status=000
+          health_status=000
+
           for attempt in $(seq 1 30); do
             home_status=$(curl --silent --show-error --location --max-time 20 \
               --output /tmp/home.html --write-out '%{http_code}' \
@@ -83,28 +115,81 @@ jobs:
               healthy=true
               break
             fi
+
             sleep 10
           done
 
+          echo "healthy=$healthy" >> "$GITHUB_OUTPUT"
+          echo "home_status=$home_status" >> "$GITHUB_OUTPUT"
+          echo "login_status=$login_status" >> "$GITHUB_OUTPUT"
+          echo "health_status=$health_status" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Publish sanitized diagnosis
+        if: always()
+        shell: bash
+        env:
+          INSTALL_CODE: ${{ steps.release.outputs.install_code }}
+          BUILD_CODE: ${{ steps.release.outputs.build_code }}
+          DEPLOY_CODE: ${{ steps.release.outputs.deploy_code }}
+          PRODUCTION_SHA: ${{ steps.release.outputs.production_sha }}
+          HEALTHY: ${{ steps.verify.outputs.healthy }}
+          HOME_STATUS: ${{ steps.verify.outputs.home_status }}
+          LOGIN_STATUS: ${{ steps.verify.outputs.login_status }}
+          HEALTH_STATUS: ${{ steps.verify.outputs.health_status }}
+        run: |
+          sanitize() {
+            sed -E \
+              -e 's/(Bearer|Authorization:)[[:space:]]+[^[:space:]]+/\1 [REDACTED]/Ig' \
+              -e 's/(api[_-]?token|token|secret)[=:][[:space:]]*[^[:space:]]+/\1=[REDACTED]/Ig'
+          }
+
           {
-            if [ "$healthy" = 'true' ]; then
-              echo '## ✅ Despliegue directo y verificación completados'
-            else
-              echo '## ⚠️ El Worker se desplegó, pero la verificación funcional no quedó completamente sana'
+            echo '## Resultado de despliegue autenticado'
+            echo
+            echo "- instalación: ${INSTALL_CODE:-no ejecutada}"
+            echo "- compilación: ${BUILD_CODE:-no ejecutada}"
+            echo "- Wrangler/OpenNext deploy: ${DEPLOY_CODE:-no ejecutado}"
+            echo "- commit de producción: \`${PRODUCTION_SHA:-desconocido}\`"
+            echo "- portada www: HTTP ${HOME_STATUS:-no verificada}"
+            echo "- login www: HTTP ${LOGIN_STATUS:-no verificado}"
+            echo "- health www: HTTP ${HEALTH_STATUS:-no verificado}"
+            echo "- salud completa: ${HEALTHY:-false}"
+            echo
+            if [ -f /tmp/health.json ]; then
+              echo '### Respuesta segura de health'
+              echo '```json'
+              head -c 2000 /tmp/health.json
+              echo
+              echo '```'
             fi
-            echo
-            echo "- portada www: HTTP $home_status"
-            echo "- login www: HTTP $login_status"
-            echo "- health www: HTTP $health_status"
-            echo
-            echo '```json'
-            cat /tmp/health.json 2>/dev/null || echo '{"status":"unavailable"}'
-            echo
-            echo '```'
-            echo
-            echo "Commit desplegado: $(git rev-parse HEAD)"
-          } > /tmp/deploy-result.md
+            if [ "${DEPLOY_CODE:-99}" != '0' ]; then
+              echo
+              echo '### Final del log de despliegue, sanitizado'
+              echo '```text'
+              tail -n 80 /tmp/deploy.log 2>/dev/null | sanitize
+              echo '```'
+            elif [ "${BUILD_CODE:-99}" != '0' ]; then
+              echo
+              echo '### Final del log de compilación, sanitizado'
+              echo '```text'
+              tail -n 80 /tmp/build.log 2>/dev/null | sanitize
+              echo '```'
+            fi
+          } > /tmp/diagnosis.md
 
-          gh pr comment 4 --repo ageyssel/sercoprev-web --body-file /tmp/deploy-result.md
+          gh issue comment 6 --repo ageyssel/sercoprev-web --body-file /tmp/diagnosis.md
 
-          test "$healthy" = 'true'
+      - name: Enforce successful release
+        if: always()
+        shell: bash
+        env:
+          INSTALL_CODE: ${{ steps.release.outputs.install_code }}
+          BUILD_CODE: ${{ steps.release.outputs.build_code }}
+          DEPLOY_CODE: ${{ steps.release.outputs.deploy_code }}
+          HEALTHY: ${{ steps.verify.outputs.healthy }}
+        run: |
+          test "${INSTALL_CODE:-99}" = '0'
+          test "${BUILD_CODE:-99}" = '0'
+          test "${DEPLOY_CODE:-99}" = '0'
+          test "${HEALTHY:-false}" = 'true'
