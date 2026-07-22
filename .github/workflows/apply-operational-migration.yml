@@ -1,11 +1,12 @@
 name: Apply operational Supabase migration
 
-# Controlled execution requested after SUPABASE_ACCESS_TOKEN provisioning on 2026-07-22.
+# Controlled execution requested after SUPABASE_ACCESS_TOKEN provisioning on 2026-07-22 at 09:22 Chile.
 on:
   push:
     branches: [feature/platform-redesign-operational-core]
     paths:
       - .github/workflows/apply-operational-migration.yml
+  workflow_dispatch:
 
 permissions:
   contents: read
