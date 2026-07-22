@@ -8,6 +8,7 @@ const items: Array<{ href: string; label: string; icon: AppIconName; exact?: boo
   { href: '/admin', label: 'Resumen', icon: 'dashboard', exact: true },
   { href: '/admin/clientes', label: 'Clientes', icon: 'users' },
   { href: '/admin/operaciones', label: 'Obligaciones y tareas', icon: 'tasks' },
+  { href: '/admin/importaciones', label: 'Importaciones', icon: 'upload' },
   { href: '/admin/leads', label: 'Prospectos', icon: 'lead' },
 ]
 
