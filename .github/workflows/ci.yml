@@ -8,6 +8,7 @@ on:
       - main
       - agent/**
       - hotfix/**
+      - feature/**
 
 permissions:
   contents: read
@@ -118,19 +119,31 @@ jobs:
             exit 1
           fi
 
-          grep -qi 'SERCOPREV' /tmp/sercoprev-home.html
+          grep -qi 'Contabilidad clara' /tmp/sercoprev-home.html
+          grep -qi 'Solicitar evaluación' /tmp/sercoprev-home.html
 
-          login_status=$(curl --silent --show-error --output /tmp/sercoprev-login.html --write-out '%{http_code}' http://127.0.0.1:8787/login || true)
-          echo "GET /login => HTTP $login_status"
-          if [ "$login_status" != "200" ]; then
-            echo "Login response:"
-            cat /tmp/sercoprev-login.html || true
-            echo
-            echo "Cloudflare preview log:"
-            tail -n 300 /tmp/sercoprev-preview.log
-            exit 1
-          fi
-          grep -qi 'Acceso Portal' /tmp/sercoprev-login.html
+          check_html_route() {
+            route="$1"
+            expected="$2"
+            output="$3"
+            status=$(curl --silent --show-error --output "$output" --write-out '%{http_code}' "http://127.0.0.1:8787$route" || true)
+            echo "GET $route => HTTP $status"
+            if [ "$status" != "200" ]; then
+              cat "$output" || true
+              tail -n 300 /tmp/sercoprev-preview.log
+              exit 1
+            fi
+            grep -qi "$expected" "$output"
+          }
+
+          check_html_route '/login' 'Ingrese a su portal' /tmp/sercoprev-login.html
+          check_html_route '/privacidad' 'Política de privacidad' /tmp/sercoprev-privacy.html
+          check_html_route '/terminos' 'Términos de uso' /tmp/sercoprev-terms.html
+
+          sitemap_status=$(curl --silent --show-error --output /tmp/sercoprev-sitemap.xml --write-out '%{http_code}' http://127.0.0.1:8787/sitemap.xml || true)
+          echo "GET /sitemap.xml => HTTP $sitemap_status"
+          test "$sitemap_status" = "200"
+          grep -q 'https://www.sercoprev.cl/' /tmp/sercoprev-sitemap.xml
 
           health_status=$(curl --silent --show-error --output /tmp/sercoprev-health.json --write-out '%{http_code}' http://127.0.0.1:8787/api/health || true)
           echo "GET /api/health => HTTP $health_status"
