@@ -65,7 +65,7 @@ export default async function NotificationsPage() {
 
       <section className="mt-7 grid gap-4 sm:grid-cols-3">
         <Metric icon="check" label="Enviadas" value={sent} />
-        <Metric icon="alert" label="Fallidas" value={failed} />
+        <Metric icon="warning" label="Fallidas" value={failed} />
         <Metric icon="inbox" label="Omitidas" value={omitted} />
       </section>
 
@@ -107,6 +107,6 @@ export default async function NotificationsPage() {
   )
 }
 
-function Metric({ icon, label, value }: { icon: 'check' | 'alert' | 'inbox'; label: string; value: number }) {
+function Metric({ icon, label, value }: { icon: 'check' | 'warning' | 'inbox'; label: string; value: number }) {
   return <article className="flex items-center gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><span className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#eaf3f9] text-[#134b78]"><AppIcon name={icon} className="h-5 w-5" /></span><div><p className="text-2xl font-black text-[#0f2438]">{value}</p><p className="text-xs font-bold uppercase tracking-wide text-slate-500">{label}</p></div></article>
 }
