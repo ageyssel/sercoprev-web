@@ -1,0 +1,51 @@
+name: Check SERCOPREV production after merge
+
+on:
+  push:
+    branches: [feature/platform-redesign-operational-core]
+    paths:
+      - .github/workflows/check-production-after-merge.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  verify-production:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Poll official domain
+        shell: bash
+        run: |
+          set -u
+          healthy=false
+          home_status=000
+          login_status=000
+          health_status=000
+          for attempt in $(seq 1 100); do
+            home_status=$(curl --silent --show-error --location --max-time 20 --output /tmp/home.html --write-out '%{http_code}' 'https://www.sercoprev.cl/' || true)
+            login_status=$(curl --silent --show-error --location --max-time 20 --output /tmp/login.html --write-out '%{http_code}' 'https://www.sercoprev.cl/login' || true)
+            health_status=$(curl --silent --show-error --location --max-time 20 --output /tmp/health.json --write-out '%{http_code}' 'https://www.sercoprev.cl/api/health' || true)
+            if [ "$home_status" = '200' ] \
+              && [ "$login_status" = '200' ] \
+              && [ "$health_status" = '200' ] \
+              && grep -qi 'Contabilidad clara para tomar' /tmp/home.html \
+              && grep -qi 'Ingrese a su portal' /tmp/login.html \
+              && grep -q '"status":"ok"' /tmp/health.json \
+              && grep -q '"operationalSchema":true' /tmp/health.json; then
+              healthy=true
+              break
+            fi
+            sleep 5
+          done
+          health_body=$(head -c 3000 /tmp/health.json 2>/dev/null || true)
+          if [ "$healthy" = 'true' ]; then
+            gh pr comment 10 --repo ageyssel/sercoprev-web --body "✅ **PRODUCCIÓN VERIFICADA**\n\n- GET /: HTTP ${home_status}, landing nueva confirmada\n- GET /login: HTTP ${login_status}, login nuevo confirmado\n- GET /api/health: HTTP ${health_status}\n- Supabase: status ok\n- operationalSchema: true\n\nHealth: \`${health_body}\`"
+            exit 0
+          fi
+          gh pr comment 10 --repo ageyssel/sercoprev-web --body "❌ **PRODUCCIÓN AÚN NO VERIFICADA**\n\n- GET /: HTTP ${home_status}\n- GET /login: HTTP ${login_status}\n- GET /api/health: HTTP ${health_status}\n\nÚltimo health: \`${health_body}\`"
+          exit 1
