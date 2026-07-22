@@ -7,6 +7,7 @@ on:
     branches:
       - main
       - agent/**
+      - hotfix/**
 
 permissions:
   contents: read
@@ -54,6 +55,29 @@ jobs:
             exit "$status"
           fi
           tail -n 40 /tmp/sercoprev-cloudflare-build.log
+
+      - name: Enforce Cloudflare Free bundle limit
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --dry-run --outdir .wrangler-dry-run > /tmp/sercoprev-size.log 2>&1
+          cat /tmp/sercoprev-size.log
+
+          gzip_kib=$(sed -n 's/.*gzip: \([0-9.]*\) KiB.*/\1/p' /tmp/sercoprev-size.log | tail -n 1)
+          if [ -z "$gzip_kib" ]; then
+            echo "No se pudo determinar el tamaño comprimido del Worker."
+            exit 1
+          fi
+
+          python - "$gzip_kib" <<'PY'
+          import sys
+
+          size = float(sys.argv[1])
+          limit = 3000.0
+          print(f"Worker comprimido: {size:.2f} KiB; máximo CI: {limit:.0f} KiB")
+          if size > limit:
+              raise SystemExit("El Worker supera el margen seguro del plan Free de Cloudflare")
+          PY
 
       - name: Smoke test in workerd
         shell: bash

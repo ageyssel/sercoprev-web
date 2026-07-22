@@ -1,7 +1,6 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { Resend } from 'resend'
 import { createAdminClient } from '@/utils/supabase/admin'
 import { createClient } from '@/utils/supabase/server'
 
@@ -102,6 +101,38 @@ function toNullableAmount(value: unknown) {
     : Number.NaN
 }
 
+async function sendWelcomeEmail(email: string, razonSocial: string) {
+  const apiKey = process.env.RESEND_API_KEY?.trim()
+  if (!apiKey) return
+
+  const appBaseUrl = process.env.APP_BASE_URL?.trim() || 'https://www.sercoprev.cl'
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from: process.env.RESEND_FROM_EMAIL ?? 'SERCOPREV <onboarding@resend.dev>',
+      to: [email],
+      subject: 'Su acceso al Portal de Clientes SERCOPREV',
+      html: `
+        <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;color:#0f172a">
+          <h1 style="color:#1e3a8a">Bienvenido a SERCOPREV</h1>
+          <p>La cuenta de <strong>${escapeHtml(razonSocial)}</strong> fue creada correctamente.</p>
+          <p>Ingrese en <a href="${appBaseUrl}/login">${appBaseUrl.replace(/^https?:\/\//, '')}/login</a> usando el correo registrado y la contraseña temporal que SERCOPREV le entregará por un canal seguro.</p>
+          <p>Al ingresar deberá reemplazar inmediatamente esa contraseña.</p>
+        </div>
+      `,
+    }),
+  })
+
+  if (!response.ok) {
+    const details = await response.text().catch(() => '')
+    throw new Error(`Resend respondió ${response.status}: ${details.slice(0, 300)}`)
+  }
+}
+
 async function requireAdmin() {
   const sessionClient = await createClient()
   const { data: { user }, error: userError } = await sessionClient.auth.getUser()
@@ -192,26 +223,10 @@ export async function crearCliente(
       }
     }
 
-    const resendApiKey = process.env.RESEND_API_KEY?.trim()
-    if (resendApiKey) {
-      try {
-        const resend = new Resend(resendApiKey)
-        await resend.emails.send({
-          from: process.env.RESEND_FROM_EMAIL ?? 'SERCOPREV <onboarding@resend.dev>',
-          to: email,
-          subject: 'Su acceso al Portal de Clientes SERCOPREV',
-          html: `
-            <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;color:#0f172a">
-              <h1 style="color:#1e3a8a">Bienvenido a SERCOPREV</h1>
-              <p>La cuenta de <strong>${escapeHtml(razonSocial)}</strong> fue creada correctamente.</p>
-              <p>Ingrese en <a href="https://www.sercoprev.cl/login">www.sercoprev.cl/login</a> usando el correo registrado y la contraseña temporal que SERCOPREV le entregará por un canal seguro.</p>
-              <p>Al ingresar deberá reemplazar inmediatamente esa contraseña.</p>
-            </div>
-          `,
-        })
-      } catch (emailError) {
-        console.error('La cuenta fue creada, pero el aviso por correo falló:', emailError)
-      }
+    try {
+      await sendWelcomeEmail(email, razonSocial)
+    } catch (emailError) {
+      console.error('La cuenta fue creada, pero el aviso por correo falló:', emailError)
     }
 
     revalidatePath('/admin')

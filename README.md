@@ -8,7 +8,7 @@ Portal corporativo y área privada de clientes de SERCOPREV.
 - TypeScript
 - Tailwind CSS 4
 - Supabase Auth, Postgres, RLS y Storage
-- Resend para correos transaccionales opcionales
+- API HTTPS de Resend para correos transaccionales opcionales
 - OpenNext y Cloudflare Workers
 
 ## Módulos
@@ -17,7 +17,7 @@ Portal corporativo y área privada de clientes de SERCOPREV.
 - Login de clientes y administración
 - Panel administrativo
 - Alta controlada de clientes
-- Importación de datos desde Excel
+- Importación de datos mediante CSV UTF-8 compatible con Excel
 - Portal privado de documentos
 - Cambio obligatorio de contraseña temporal
 
@@ -63,19 +63,32 @@ docs/SUPABASE_SETUP.md
 
 Todas las tablas expuestas utilizan RLS. Las mutaciones administrativas se ejecutan en Server Actions que vuelven a autenticar y autorizar al administrador antes de utilizar la clave privilegiada.
 
+## Importación administrativa
+
+El panel entrega una plantilla `.csv` con BOM UTF-8 y separador punto y coma, compatible con Excel en español. El importador:
+
+- exige las columnas `periodo`, `descripcion`, `monto` y `estado`;
+- acepta un máximo de 500 filas y 2 MB;
+- interpreta campos entre comillas y comillas escapadas;
+- valida nuevamente cada registro en el servidor;
+- no permite escribir directamente desde el navegador en Supabase.
+
 ## Validación
 
 ```bash
 npm run lint
 npm run typecheck
-npm run build
+npm run build:cloudflare
 ```
 
-O todo junto:
+El workflow de CI también:
 
-```bash
-npm run check
-```
+- genera el Worker mediante OpenNext;
+- mide el bundle con `wrangler deploy --dry-run`;
+- rechaza bundles superiores a 3000 KiB comprimidos;
+- inicia el Worker en `workerd` y exige HTTP 200 en `/`.
+
+El build de producción utiliza Webpack porque el bundle generado por Turbopack excedía el límite del plan Free para esta aplicación.
 
 ## Despliegue en Cloudflare
 
@@ -89,5 +102,7 @@ Los secretos deben configurarse directamente en Cloudflare o mediante Wrangler:
 npx wrangler secret put SUPABASE_SECRET_KEY
 npx wrangler secret put RESEND_API_KEY
 ```
+
+Los directorios `.next` y `.open-next` son artefactos generados y nunca deben versionarse.
 
 La rama principal no debe recibir cambios directos. Use ramas de trabajo y pull requests revisables.
