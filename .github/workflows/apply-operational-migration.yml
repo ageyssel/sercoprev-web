@@ -1,5 +1,6 @@
 name: Apply operational Supabase migration
 
+# Controlled execution requested after SUPABASE_ACCESS_TOKEN provisioning on 2026-07-22.
 on:
   push:
     branches: [feature/platform-redesign-operational-core]
