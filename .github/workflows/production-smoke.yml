@@ -1,0 +1,120 @@
+name: Verify production
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-production
+  cancel-in-progress: true
+
+jobs:
+  production:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Wait for Cloudflare and verify production
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          verify_endpoint() {
+            local url="$1"
+            local expected_status="$2"
+            local body_pattern="$3"
+            local body_file="$4"
+            local header_file="$5"
+
+            status=$(curl \
+              --silent \
+              --show-error \
+              --location \
+              --max-time 20 \
+              --dump-header "$header_file" \
+              --output "$body_file" \
+              --write-out '%{http_code}' \
+              "$url" || true)
+
+            if [ "$status" != "$expected_status" ]; then
+              return 1
+            fi
+
+            grep -qi "$body_pattern" "$body_file"
+          }
+
+          ready=false
+          for attempt in $(seq 1 60); do
+            echo "Production verification attempt $attempt/60"
+
+            if verify_endpoint \
+              'https://www.sercoprev.cl/' \
+              '200' \
+              'SERCOPREV' \
+              /tmp/home.html \
+              /tmp/home.headers \
+              && verify_endpoint \
+              'https://www.sercoprev.cl/login' \
+              '200' \
+              'Acceso Portal' \
+              /tmp/login.html \
+              /tmp/login.headers \
+              && verify_endpoint \
+              'https://www.sercoprev.cl/api/health' \
+              '200' \
+              '"status":"ok"' \
+              /tmp/health.json \
+              /tmp/health.headers; then
+              ready=true
+              break
+            fi
+
+            echo 'Production is not ready yet.'
+            cat /tmp/health.json 2>/dev/null || true
+            sleep 10
+          done
+
+          if [ "$ready" != 'true' ]; then
+            echo 'Production did not become healthy within 10 minutes.'
+            echo 'Home response:'
+            head -c 1000 /tmp/home.html 2>/dev/null || true
+            echo
+            echo 'Login response:'
+            head -c 1000 /tmp/login.html 2>/dev/null || true
+            echo
+            echo 'Health response:'
+            cat /tmp/health.json 2>/dev/null || true
+            exit 1
+          fi
+
+          grep -qi 'content-security-policy:' /tmp/login.headers
+          grep -qi 'static.cloudflareinsights.com' /tmp/login.headers
+          grep -qi 'x-robots-tag:.*noindex' /tmp/health.headers
+
+          apex_login_status=$(curl \
+            --silent \
+            --show-error \
+            --location \
+            --max-time 20 \
+            --output /tmp/apex-login.html \
+            --write-out '%{http_code}' \
+            'https://sercoprev.cl/login')
+
+          apex_health_status=$(curl \
+            --silent \
+            --show-error \
+            --location \
+            --max-time 20 \
+            --output /tmp/apex-health.json \
+            --write-out '%{http_code}' \
+            'https://sercoprev.cl/api/health')
+
+          test "$apex_login_status" = '200'
+          test "$apex_health_status" = '200'
+          grep -qi 'Acceso Portal' /tmp/apex-login.html
+          grep -q '"status":"ok"' /tmp/apex-health.json
+
+          echo 'Production verification passed.'
+          cat /tmp/health.json
