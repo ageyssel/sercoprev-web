@@ -24,7 +24,7 @@ jobs:
           set +e
 
           gh pr comment 4 --repo ageyssel/sercoprev-web --body \
-            '⏳ Verificación productiva iniciada. Esperando propagación de Cloudflare y comprobando Supabase.'
+            '⏳ Segunda verificación iniciada después del disparo directo de Workers Builds.'
 
           ready=false
           home_status='000'
@@ -111,7 +111,7 @@ jobs:
             echo
             echo '```'
             echo
-            echo "Commit productivo esperado: 23bb81141f9c05030e188be785b234dc8591be76"
+            echo "Commit productivo esperado: 1d328da756d443a49a31f091e704f8c370afb11b"
           } > /tmp/production-verification.md
 
           gh pr comment 4 --repo ageyssel/sercoprev-web --body-file /tmp/production-verification.md
