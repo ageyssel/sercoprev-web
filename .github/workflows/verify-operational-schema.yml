@@ -1,0 +1,64 @@
+name: Verify operational Supabase schema
+
+on:
+  push:
+    branches: [feature/platform-redesign-operational-core]
+    paths:
+      - .github/workflows/verify-operational-schema.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+      SUPABASE_URL: https://kxrxlygnhukfmdgqhoaz.supabase.co
+    steps:
+      - name: Verify credential
+        shell: bash
+        run: |
+          if [ -z "${SUPABASE_SECRET_KEY:-}" ]; then
+            gh pr comment 10 --repo ageyssel/sercoprev-web --body '❌ No fue posible verificar Supabase: falta `SUPABASE_SECRET_KEY`.'
+            exit 1
+          fi
+
+      - name: Verify complete schema
+        shell: bash
+        run: |
+          set -euo pipefail
+          failed=''
+          for resource in \
+            'empresas?select=id,estado_cliente,contador_asignado,plan_servicio&limit=1' \
+            'leads?select=id&limit=1' \
+            'obligaciones?select=id&limit=1' \
+            'tareas?select=id&limit=1' \
+            'solicitudes_documentos?select=id&limit=1' \
+            'servicios_contratados?select=id&limit=1' \
+            'auditoria_eventos?select=id&limit=1' \
+            'honorarios?select=id&limit=1' \
+            'tickets?select=id&limit=1' \
+            'ticket_mensajes?select=id&limit=1' \
+            'contactos_empresa?select=id&limit=1'; do
+            table="${resource%%\?*}"
+            status=$(curl --silent --show-error --output /tmp/supabase-check.json --write-out '%{http_code}' \
+              "${SUPABASE_URL}/rest/v1/${resource}" \
+              -H "apikey: ${SUPABASE_SECRET_KEY}" \
+              -H "Authorization: Bearer ${SUPABASE_SECRET_KEY}")
+            if [ "$status" != '200' ]; then
+              failed="${failed} ${table}(HTTP ${status})"
+            fi
+          done
+          if [ -n "$failed" ]; then
+            gh pr comment 10 --repo ageyssel/sercoprev-web --body "❌ Verificación independiente de Supabase: el esquema todavía no está completo. Recursos con error:${failed}."
+            exit 1
+          fi
+
+      - name: Report success
+        run: |
+          gh pr comment 10 --repo ageyssel/sercoprev-web --body '✅ Verificación independiente completada: el esquema operativo integral de Supabase está disponible y responde correctamente mediante la API REST.'
