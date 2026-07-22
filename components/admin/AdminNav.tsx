@@ -11,6 +11,7 @@ const items: Array<{ href: string; label: string; icon: AppIconName; exact?: boo
   { href: '/admin/importaciones', label: 'Importaciones', icon: 'upload' },
   { href: '/admin/cobranza', label: 'Honorarios y cobranza', icon: 'money' },
   { href: '/admin/tickets', label: 'Consultas de clientes', icon: 'message' },
+  { href: '/admin/notificaciones', label: 'Notificaciones', icon: 'inbox' },
   { href: '/admin/leads', label: 'Prospectos', icon: 'lead' },
 ]
 
