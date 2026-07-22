@@ -1,11 +1,15 @@
 import { NextResponse } from 'next/server'
+import { createAdminClient } from '@/utils/supabase/admin'
 import { getApplicationBaseUrl, getSupabasePublicConfig } from '@/utils/supabase/config'
 
 export const dynamic = 'force-dynamic'
 
-export function GET() {
+export async function GET() {
   let publicSupabaseConfig = false
   let applicationBaseUrl = false
+  let database = false
+  let administrator = false
+  let documentStorage = false
 
   try {
     getSupabasePublicConfig()
@@ -21,19 +25,41 @@ export function GET() {
     applicationBaseUrl = false
   }
 
+  try {
+    const supabase = createAdminClient()
+
+    const { data: adminProfile, error: profileError } = await supabase
+      .from('empresas')
+      .select('user_id')
+      .eq('es_admin', true)
+      .limit(1)
+      .maybeSingle()
+
+    database = !profileError
+
+    if (!profileError && adminProfile?.user_id) {
+      const { data: authUser, error: authError } = await supabase.auth.admin.getUserById(
+        adminProfile.user_id,
+      )
+      administrator = !authError && Boolean(authUser.user)
+    }
+
+    const { data: buckets, error: bucketError } = await supabase.storage.listBuckets()
+    documentStorage = !bucketError && Boolean(
+      buckets?.some((bucket) => bucket.id === 'documentos' && bucket.public === false),
+    )
+  } catch {
+    database = false
+    administrator = false
+    documentStorage = false
+  }
+
   const checks = {
     publicSupabaseConfig,
     applicationBaseUrl,
-    supabaseSecretKey: Boolean(process.env.SUPABASE_SECRET_KEY?.trim()),
-  }
-
-  const runtimeOverrides = {
-    supabaseUrl: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()),
-    supabasePublishableKey: Boolean(
-      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim()
-      || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim(),
-    ),
-    applicationBaseUrl: Boolean(process.env.APP_BASE_URL?.trim()),
+    database,
+    administrator,
+    documentStorage,
   }
 
   const healthy = Object.values(checks).every(Boolean)
@@ -42,12 +68,12 @@ export function GET() {
     {
       status: healthy ? 'ok' : 'degraded',
       checks,
-      runtimeOverrides,
     },
     {
       status: healthy ? 200 : 503,
       headers: {
         'Cache-Control': 'no-store, max-age=0',
+        'X-Robots-Tag': 'noindex, nofollow, noarchive',
       },
     },
   )
