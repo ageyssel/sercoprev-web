@@ -8,6 +8,7 @@ export async function GET() {
   let publicSupabaseConfig = false
   let applicationBaseUrl = false
   let database = false
+  let operationalSchema = false
   let administrator = false
   let documentStorage = false
 
@@ -44,12 +45,33 @@ export async function GET() {
       administrator = !authError && Boolean(authUser.user)
     }
 
+    const [companySchema, leadsSchema, obligationsSchema, tasksSchema, requestsSchema, servicesSchema, auditSchema] = await Promise.all([
+      supabase.from('empresas').select('id, estado_cliente, contador_asignado, plan_servicio').limit(1),
+      supabase.from('leads').select('id').limit(1),
+      supabase.from('obligaciones').select('id').limit(1),
+      supabase.from('tareas').select('id').limit(1),
+      supabase.from('solicitudes_documentos').select('id').limit(1),
+      supabase.from('servicios_contratados').select('id').limit(1),
+      supabase.from('auditoria_eventos').select('id').limit(1),
+    ])
+
+    operationalSchema = [
+      companySchema.error,
+      leadsSchema.error,
+      obligationsSchema.error,
+      tasksSchema.error,
+      requestsSchema.error,
+      servicesSchema.error,
+      auditSchema.error,
+    ].every((error) => !error)
+
     const { data: buckets, error: bucketError } = await supabase.storage.listBuckets()
     documentStorage = !bucketError && Boolean(
       buckets?.some((bucket) => bucket.id === 'documentos' && bucket.public === false),
     )
   } catch {
     database = false
+    operationalSchema = false
     administrator = false
     documentStorage = false
   }
@@ -58,6 +80,7 @@ export async function GET() {
     publicSupabaseConfig,
     applicationBaseUrl,
     database,
+    operationalSchema,
     administrator,
     documentStorage,
   }
