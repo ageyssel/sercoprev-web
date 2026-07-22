@@ -84,6 +84,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
+          cat > .dev.vars <<EOF
+          NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY}
+          APP_BASE_URL=${APP_BASE_URL}
+          SUPABASE_SECRET_KEY=${SUPABASE_SECRET_KEY}
+          EOF
+
           npx opennextjs-cloudflare preview --port 8787 > /tmp/sercoprev-preview.log 2>&1 &
           preview_pid=$!
           trap 'kill "$preview_pid" 2>/dev/null || true' EXIT
