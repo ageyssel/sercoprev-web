@@ -3,13 +3,15 @@
 import { useActionState } from 'react'
 import {
   actualizarCliente,
-  cargarDocumentoAdministrador,
-  crearObligacion,
   crearServicio,
-  crearSolicitudDocumento,
-  crearTarea,
   type OperationalActionState,
 } from '@/app/admin/operational-actions'
+import {
+  cargarDocumentoAdministradorNotificado,
+  crearObligacionNotificada,
+  crearSolicitudDocumentoNotificada,
+  crearTareaProgramada,
+} from '@/app/admin/notified-operational-actions'
 import { AppIcon } from '@/components/AppIcon'
 
 const initialState: OperationalActionState = { status: 'idle', message: '' }
@@ -72,7 +74,7 @@ export function ClientProfileForm({ company }: { company: CompanyProfile }) {
 }
 
 export function ObligationForm({ companyId }: { companyId: string }) {
-  const [state, action, pending] = useActionState(crearObligacion, initialState)
+  const [state, action, pending] = useActionState(crearObligacionNotificada, initialState)
   return (
     <form action={action} className="grid gap-4">
       <input type="hidden" name="empresa_id" value={companyId} />
@@ -93,16 +95,19 @@ export function ObligationForm({ companyId }: { companyId: string }) {
 }
 
 export function TaskForm({ companyId }: { companyId: string }) {
-  const [state, action, pending] = useActionState(crearTarea, initialState)
+  const [state, action, pending] = useActionState(crearTareaProgramada, initialState)
   return (
     <form action={action} className="grid gap-4">
       <input type="hidden" name="empresa_id" value={companyId} />
       <Field label="Tarea" name="titulo" required placeholder="Revisar libro de compras" />
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <Field label="Responsable" name="responsable" placeholder="Nombre" />
-        <Field label="Vencimiento" name="fecha_vencimiento" type="date" />
+        <Field label="Primer vencimiento" name="fecha_vencimiento" type="date" />
         <SelectField label="Prioridad" name="prioridad" defaultValue="Media" options={['Baja', 'Media', 'Alta', 'Crítica']} />
+        <SelectField label="Periodicidad" name="recurrencia" defaultValue="Una vez" options={['Una vez', 'Mensual']} />
+        <SelectField label="Meses preparados" name="meses_anticipacion" defaultValue="6" options={['3', '6', '12']} />
       </div>
+      <p className="rounded-xl border border-[#134b78]/20 bg-white px-4 py-3 text-xs font-semibold leading-5 text-slate-600">Al seleccionar <strong>Mensual</strong>, SERCOPREV creará automáticamente cada vencimiento futuro respetando el día del primer vencimiento y mantendrá la serie preparada con la anticipación seleccionada.</p>
       <label className="grid gap-2 text-sm font-bold text-slate-700">Descripción<textarea name="descripcion" rows={3} maxLength={1500} className={textareaClass} placeholder="Detalle interno de la tarea." /></label>
       <Feedback state={state} />
       <SubmitButton pending={pending} text="Crear tarea" loading="Creando…" icon="plus" />
@@ -111,7 +116,7 @@ export function TaskForm({ companyId }: { companyId: string }) {
 }
 
 export function DocumentRequestForm({ companyId }: { companyId: string }) {
-  const [state, action, pending] = useActionState(crearSolicitudDocumento, initialState)
+  const [state, action, pending] = useActionState(crearSolicitudDocumentoNotificada, initialState)
   return (
     <form action={action} className="grid gap-4">
       <input type="hidden" name="empresa_id" value={companyId} />
@@ -122,6 +127,7 @@ export function DocumentRequestForm({ companyId }: { companyId: string }) {
         <Field label="Fecha límite" name="fecha_limite" type="date" />
       </div>
       <label className="grid gap-2 text-sm font-bold text-slate-700">Instrucciones<textarea name="descripcion" rows={3} maxLength={1500} className={textareaClass} placeholder="Explique qué archivo se necesita y cualquier condición relevante." /></label>
+      <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-semibold leading-5 text-emerald-800">Al crear la solicitud se notificará por correo a los contactos habilitados y, cuando WhatsApp esté configurado, se enviará el aviso mediante una plantilla aprobada.</p>
       <Feedback state={state} />
       <SubmitButton pending={pending} text="Enviar solicitud" loading="Enviando…" icon="upload" />
     </form>
@@ -129,7 +135,7 @@ export function DocumentRequestForm({ companyId }: { companyId: string }) {
 }
 
 export function AdminDocumentUploadForm({ companyId }: { companyId: string }) {
-  const [state, action, pending] = useActionState(cargarDocumentoAdministrador, initialState)
+  const [state, action, pending] = useActionState(cargarDocumentoAdministradorNotificado, initialState)
   return (
     <form action={action} className="grid gap-4">
       <input type="hidden" name="empresa_id" value={companyId} />
