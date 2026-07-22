@@ -20,34 +20,26 @@ jobs:
           ref: feature/platform-redesign-operational-core
           fetch-depth: 0
 
-      - name: Apply deterministic fixes
+      - name: Replace impure render date
         shell: bash
         run: |
           python <<'PY'
           from pathlib import Path
 
-          workspace = Path('app/admin/clientes/[id]/page.tsx')
-          text = workspace.read_text()
-          duplicate = "  razon_social: string\n  nombre_fantasia: string | null\n  rut: string\n  nombre_fantasia: string | null\n"
-          replacement = "  razon_social: string\n  nombre_fantasia: string | null\n  rut: string\n"
-          if duplicate not in text:
-              raise SystemExit('Expected duplicate Company property was not found')
-          workspace.write_text(text.replace(duplicate, replacement, 1))
-
-          actions = Path('app/admin/operational-actions.ts')
-          text = actions.read_text()
-          old = "  adminClient: ReturnType<typeof import('@/utils/supabase/admin').createAdminClient>,"
-          new = "  adminClient: Awaited<ReturnType<typeof requireAdmin>>['adminClient'],"
+          page = Path('app/admin/page.tsx')
+          text = page.read_text()
+          old = "  const today = new Date().toISOString().slice(0, 10)\n  const inThirtyDays = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10)"
+          new = "  const todayDate = new Date()\n  const today = todayDate.toISOString().slice(0, 10)\n  const inThirtyDaysDate = new Date(todayDate)\n  inThirtyDaysDate.setUTCDate(inThirtyDaysDate.getUTCDate() + 30)\n  const inThirtyDays = inThirtyDaysDate.toISOString().slice(0, 10)"
           if old not in text:
-              raise SystemExit('Expected admin client type was not found')
-          actions.write_text(text.replace(old, new, 1))
+              raise SystemExit('Expected dashboard date calculation was not found')
+          page.write_text(text.replace(old, new, 1))
           PY
 
-      - name: Commit fixes
+      - name: Commit fix
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app/admin/clientes/'[id]'/page.tsx app/admin/operational-actions.ts
-          git commit -m "Fix platform static type definitions"
+          git add app/admin/page.tsx
+          git commit -m "Make dashboard date calculation deterministic"
           git push origin HEAD:feature/platform-redesign-operational-core
