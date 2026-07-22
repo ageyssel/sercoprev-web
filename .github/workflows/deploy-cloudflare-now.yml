@@ -1,5 +1,6 @@
 name: Deploy Cloudflare now
 
+# Re-run after provisioning CLOUDFLARE_API_TOKEN.
 on:
   push:
     branches: [ops/verify-production-now]
