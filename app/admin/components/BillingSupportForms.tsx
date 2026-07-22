@@ -2,19 +2,15 @@
 
 import { useActionState } from 'react'
 import { AppIcon } from '@/components/AppIcon'
-import {
-  crearContactoEmpresa,
-  crearHonorario,
-  responderTicketAdmin,
-  type SupportActionState,
-} from '@/app/support-actions'
+import { crearContactoEmpresa, type SupportActionState } from '@/app/support-actions'
+import { crearHonorarioNotificado, responderTicketAdminNotificado } from '@/app/notified-support-actions'
 
 const initialState: SupportActionState = { status: 'idle', message: '' }
 const inputClass = 'h-11 rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-[#17324a] outline-none transition placeholder:text-slate-400 focus:border-[#134b78] focus:ring-4 focus:ring-[#134b78]/10'
 const textareaClass = 'rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm font-medium text-[#17324a] outline-none transition placeholder:text-slate-400 focus:border-[#134b78] focus:ring-4 focus:ring-[#134b78]/10'
 
 export function FeeForm({ companyId, defaultAmount }: { companyId: string; defaultAmount?: number | null }) {
-  const [state, action, pending] = useActionState(crearHonorario, initialState)
+  const [state, action, pending] = useActionState(crearHonorarioNotificado, initialState)
   return (
     <form action={action} className="grid gap-4">
       <input type="hidden" name="empresa_id" value={companyId} />
@@ -54,7 +50,7 @@ export function CompanyContactForm({ companyId }: { companyId: string }) {
 }
 
 export function AdminTicketReplyForm({ ticketId, companyId }: { ticketId: string; companyId: string }) {
-  const [state, action, pending] = useActionState(responderTicketAdmin, initialState)
+  const [state, action, pending] = useActionState(responderTicketAdminNotificado, initialState)
   return (
     <form action={action} className="mt-4 grid gap-3 rounded-2xl border border-[#134b78]/20 bg-[#eaf3f9] p-4">
       <input type="hidden" name="ticket_id" value={ticketId} />
