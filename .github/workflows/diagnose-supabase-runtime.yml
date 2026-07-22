@@ -1,0 +1,108 @@
+name: Diagnose Supabase runtime
+
+on:
+  push:
+    branches: [ops/verify-production-now]
+    paths:
+      - .github/workflows/diagnose-supabase-runtime.yml
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 9021b712f9a73815e6b333a4870e0021
+      SUPABASE_URL: https://kxrxlygnhukfmdgqhoaz.supabase.co
+      SUPABASE_PUBLISHABLE_KEY: sb_publishable_LpXB0WEd-O8Y5ARxeEZ2hQ_xhw3jP1n
+    steps:
+      - name: Report start
+        run: |
+          gh issue comment 6 --repo ageyssel/sercoprev-web --body \
+            '🔎 Diagnóstico de runtime Supabase iniciado: nombres de secretos Cloudflare, existencia del esquema y respuesta pública protegida.'
+
+      - name: Checkout production
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: main
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund --silent
+
+      - name: Inspect secret names and Supabase schema
+        shell: bash
+        run: |
+          set +e
+
+          npx wrangler secret list --format json > /tmp/cloudflare-secrets.json 2>/tmp/cloudflare-secrets.err
+          secret_list_code=$?
+          if [ "$secret_list_code" -ne 0 ]; then
+            npx wrangler secret list > /tmp/cloudflare-secrets.txt 2>/tmp/cloudflare-secrets.err
+            secret_list_code=$?
+          fi
+
+          openapi_status=$(curl --silent --show-error --max-time 20 \
+            --output /tmp/openapi.json --write-out '%{http_code}' \
+            -H "apikey: $SUPABASE_PUBLISHABLE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_PUBLISHABLE_KEY" \
+            "$SUPABASE_URL/rest/v1/" || true)
+
+          empresas_status=$(curl --silent --show-error --max-time 20 \
+            --output /tmp/empresas.json --write-out '%{http_code}' \
+            -H "apikey: $SUPABASE_PUBLISHABLE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_PUBLISHABLE_KEY" \
+            -H 'Accept: application/json' \
+            "$SUPABASE_URL/rest/v1/empresas?select=user_id,es_admin&limit=1" || true)
+
+          bucket_status=$(curl --silent --show-error --max-time 20 \
+            --output /tmp/buckets.json --write-out '%{http_code}' \
+            -H "apikey: $SUPABASE_PUBLISHABLE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_PUBLISHABLE_KEY" \
+            "$SUPABASE_URL/storage/v1/bucket" || true)
+
+          has_empresas_in_openapi=false
+          grep -q 'empresas' /tmp/openapi.json 2>/dev/null && has_empresas_in_openapi=true
+
+          secret_names='unavailable'
+          if [ -s /tmp/cloudflare-secrets.json ]; then
+            secret_names=$(jq -r '.[].name // .[].key // empty' /tmp/cloudflare-secrets.json 2>/dev/null | sort -u | paste -sd ', ' -)
+          elif [ -s /tmp/cloudflare-secrets.txt ]; then
+            secret_names=$(sed -nE 's/.*(SUPABASE_[A-Z0-9_]+|RESEND_[A-Z0-9_]+).*/\1/p' /tmp/cloudflare-secrets.txt | sort -u | paste -sd ', ' -)
+          fi
+          [ -n "$secret_names" ] || secret_names='none detected'
+
+          {
+            echo '## Diagnóstico Supabase y secretos runtime'
+            echo
+            echo "- lectura de nombres de secretos Cloudflare: código $secret_list_code"
+            echo "- nombres detectados: \`$secret_names\`"
+            echo "- OpenAPI PostgREST: HTTP $openapi_status"
+            echo "- tabla \`empresas\` visible en OpenAPI: $has_empresas_in_openapi"
+            echo "- consulta anónima protegida a \`empresas\`: HTTP $empresas_status"
+            echo "- listado anónimo de buckets: HTTP $bucket_status"
+            echo
+            echo '### Respuesta de empresas, limitada y segura'
+            echo '```json'
+            head -c 1500 /tmp/empresas.json 2>/dev/null || echo '{"status":"unavailable"}'
+            echo
+            echo '```'
+            echo
+            echo '### Respuesta de buckets, limitada y segura'
+            echo '```json'
+            head -c 1500 /tmp/buckets.json 2>/dev/null || echo '{"status":"unavailable"}'
+            echo
+            echo '```'
+          } > /tmp/runtime-diagnosis.md
+
+          gh issue comment 6 --repo ageyssel/sercoprev-web --body-file /tmp/runtime-diagnosis.md
