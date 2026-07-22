@@ -46,7 +46,8 @@ jobs:
       - name: Apply migrations using Supabase Management API
         shell: bash
         run: |
-          python <<'PY'
+          set +e
+          python <<'PY' > /tmp/supabase-migration.log 2>&1
           import json
           import os
           import urllib.error
@@ -62,28 +63,44 @@ jobs:
           ]
 
           for path in migration_paths:
+              print(f'Applying {path.name}...', flush=True)
               body = json.dumps({'query': path.read_text(), 'read_only': False}).encode()
               request = urllib.request.Request(
                   endpoint,
                   data=body,
                   method='POST',
-                  headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'},
+                  headers={
+                      'Authorization': f'Bearer {token}',
+                      'Content-Type': 'application/json',
+                      'User-Agent': 'sercoprev-github-actions',
+                  },
               )
               try:
-                  with urllib.request.urlopen(request, timeout=120) as response:
+                  with urllib.request.urlopen(request, timeout=180) as response:
+                      response_body = response.read().decode('utf-8', errors='replace')
                       if response.status not in (200, 201):
-                          raise RuntimeError(f'{path.name}: unexpected HTTP {response.status}')
-                      response.read()
+                          raise RuntimeError(f'{path.name}: unexpected HTTP {response.status}: {response_body[:1200]}')
               except urllib.error.HTTPError as error:
-                  details = error.read().decode('utf-8', errors='replace')[:1000]
+                  details = error.read().decode('utf-8', errors='replace')[:1600]
                   raise RuntimeError(f'{path.name}: Supabase returned HTTP {error.code}: {details}') from error
-              print(f'Applied {path.name}')
+              except urllib.error.URLError as error:
+                  raise RuntimeError(f'{path.name}: network error: {error.reason}') from error
+              print(f'Applied {path.name}', flush=True)
           PY
+          status=$?
+          set -e
+          cat /tmp/supabase-migration.log
+          if [ "$status" -ne 0 ]; then
+            safe_log=$(tail -n 25 /tmp/supabase-migration.log | sed 's/`/'"'"'/g' | head -c 5000)
+            gh pr comment 10 --repo ageyssel/sercoprev-web --body "❌ La migración de Supabase falló dentro de la Management API. Diagnóstico sanitizado:\n\n\`\`\`text\n${safe_log}\n\`\`\`"
+            exit "$status"
+          fi
 
       - name: Verify operational schema with service credential
         shell: bash
         run: |
           set -euo pipefail
+          failed=''
           for resource in \
             'empresas?select=id,estado_cliente,contador_asignado,plan_servicio&limit=1' \
             'leads?select=id&limit=1' \
@@ -96,16 +113,19 @@ jobs:
             'tickets?select=id&limit=1' \
             'ticket_mensajes?select=id&limit=1' \
             'contactos_empresa?select=id&limit=1'; do
+            table="${resource%%\?*}"
             status=$(curl --silent --show-error --output /tmp/supabase-check.json --write-out '%{http_code}' \
               "${SUPABASE_URL}/rest/v1/${resource}" \
               -H "apikey: ${SUPABASE_SECRET_KEY}" \
               -H "Authorization: Bearer ${SUPABASE_SECRET_KEY}")
             if [ "$status" != '200' ]; then
-              echo "Operational schema verification failed for ${resource%%\?*}: HTTP $status"
-              cat /tmp/supabase-check.json
-              exit 1
+              failed="${failed} ${table}(HTTP ${status})"
             fi
           done
+          if [ -n "$failed" ]; then
+            gh pr comment 10 --repo ageyssel/sercoprev-web --body "❌ Las consultas SQL finalizaron, pero la verificación REST detectó recursos no disponibles:${failed}."
+            exit 1
+          fi
 
       - name: Report success
         run: |
