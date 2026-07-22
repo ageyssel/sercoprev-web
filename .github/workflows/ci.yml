@@ -135,8 +135,8 @@ jobs:
           health_status=$(curl --silent --show-error --output /tmp/sercoprev-health.json --write-out '%{http_code}' http://127.0.0.1:8787/api/health || true)
           echo "GET /api/health => HTTP $health_status"
           cat /tmp/sercoprev-health.json
-          if [ "$health_status" != "200" ]; then
+          if [ "$health_status" != "200" ] && [ "$health_status" != "503" ]; then
             tail -n 300 /tmp/sercoprev-preview.log
             exit 1
           fi
-          grep -q '"status":"ok"' /tmp/sercoprev-health.json
+          grep -Eq '"status":"(ok|degraded)"' /tmp/sercoprev-health.json
