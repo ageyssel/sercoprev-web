@@ -1,4 +1,4 @@
-name: Deploy Worker atomically with Supabase secret
+name: Final Cloudflare and Supabase verification
 
 on:
   push:
@@ -29,8 +29,8 @@ jobs:
           set -euo pipefail
           test -n "${CLOUDFLARE_API_TOKEN:-}"
           test -n "${SUPABASE_SECRET_KEY:-}"
-          gh issue comment 6 --repo ageyssel/sercoprev-web --body \
-            '⏳ Despliegue atómico iniciado: código de `main` y `SUPABASE_SECRET_KEY` se cargarán en la misma versión. Ningún valor será registrado.'
+          gh issue comment 7 --repo ageyssel/sercoprev-web --body \
+            '⏳ Verificación final iniciada. El código de `main` y `SUPABASE_SECRET_KEY` se cargarán en la misma versión productiva; ningún valor sensible será registrado.'
 
       - name: Checkout production branch
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -65,7 +65,7 @@ jobs:
           path.chmod(0o600)
           PY
 
-      - name: Deploy code and secret as one version
+      - name: Deploy code and secret atomically
         shell: bash
         run: |
           set -euo pipefail
@@ -73,8 +73,8 @@ jobs:
           npx opennextjs-cloudflare deploy -- \
             --keep-vars \
             --secrets-file /tmp/sercoprev-cloudflare-secrets.json
-          gh issue comment 6 --repo ageyssel/sercoprev-web --body \
-            '✅ OpenNext y Wrangler desplegaron el código y la clave Supabase en una única versión productiva.'
+          gh issue comment 7 --repo ageyssel/sercoprev-web --body \
+            '✅ Cloudflare aceptó el despliegue atómico de código y secreto mediante OpenNext/Wrangler.'
 
       - name: Verify production and Supabase
         shell: bash
@@ -107,7 +107,7 @@ jobs:
             if [ "$healthy" = true ]; then
               echo '## ✅ Supabase y producción completamente operativos'
             else
-              echo '## ⚠️ Despliegue completado; quedan componentes Supabase pendientes'
+              echo '## ⚠️ Despliegue correcto; quedan componentes Supabase pendientes'
             fi
             echo
             echo "- portada: HTTP $home_status"
@@ -123,7 +123,7 @@ jobs:
             echo "Commit desplegado: $(git rev-parse HEAD)"
           } > /tmp/result.md
 
-          gh issue comment 6 --repo ageyssel/sercoprev-web --body-file /tmp/result.md
+          gh issue comment 7 --repo ageyssel/sercoprev-web --body-file /tmp/result.md
 
           test "$home_status" = '200'
           test "$login_status" = '200'
