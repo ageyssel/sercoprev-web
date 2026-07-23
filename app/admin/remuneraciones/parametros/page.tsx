@@ -4,7 +4,8 @@ import { InfoTip } from '@/components/ui/InfoTip'
 import { formatCurrency, formatDate } from '@/lib/format'
 import { getOfficialIndicators } from '@/lib/chile-indicators'
 import { createClient } from '@/utils/supabase/server'
-import { PayrollParametersForm, type PayrollParameterDefaults } from '@/app/admin/components/PayrollForms'
+import { OfficialPayrollParametersForm } from '@/app/admin/components/OfficialPayrollParametersForm'
+import type { PayrollParameterDefaults } from '@/app/admin/components/PayrollForms'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,7 +13,9 @@ type Company = { id: string; razon_social: string; nombre_fantasia: string | nul
 type Parameter = { id: string; periodo: string; uf: number; utm: number; ingreso_minimo: number; fuente: string | null; uf_fecha: string | null; utm_periodo: string | null; indicadores_verificados_at: string | null; updated_at: string }
 
 function todayInChile() {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santiago', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Santiago', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date())
+  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]))
+  return `${value.year}-${value.month}-${value.day}`
 }
 
 export default async function PayrollParametersPage({ searchParams }: { searchParams: Promise<{ empresa?: string; fecha?: string }> }) {
@@ -32,10 +35,12 @@ export default async function PayrollParametersPage({ searchParams }: { searchPa
     indicators = await getOfficialIndicators(selectedDate)
   } catch (caught) {
     console.error('No fue posible obtener UF/UTM oficiales:', caught)
-    indicatorError = caught instanceof Error && caught.message.includes('NOT_PUBLISHED') ? 'El SII aún no publica uno de los valores para la fecha seleccionada.' : 'No fue posible consultar la fuente oficial. Puede utilizar un valor previamente verificado y dejar su fuente registrada.'
+    indicatorError = caught instanceof Error && caught.message.includes('NOT_PUBLISHED')
+      ? 'El SII aún no publica uno de los valores para la fecha seleccionada.'
+      : 'No fue posible consultar la fuente oficial. Puede utilizar un valor previamente verificado y dejar su fuente registrada.'
   }
 
-  const defaults: PayrollParameterDefaults | undefined = indicators ? {
+  const defaults: PayrollParameterDefaults = indicators ? {
     period: selectedDate.slice(0, 7),
     uf: indicators.uf.valor,
     utm: indicators.utm.valor,
@@ -65,7 +70,7 @@ export default async function PayrollParametersPage({ searchParams }: { searchPa
       </section>
 
       {!selected ? <Empty /> : <>
-        <details open className="mt-7 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6"><summary className="cursor-pointer list-none text-xl font-black text-[#0f2438] [&::-webkit-details-marker]:hidden">Completar configuración del periodo</summary><p className="mt-2 text-sm leading-6 text-slate-500">UF y UTM se precargan automáticamente. Complete y verifique los demás valores antes de guardar.</p><div className="mt-6 border-t border-slate-200 pt-6"><PayrollParametersForm key={`${selected.id}-${selectedDate}`} companyId={selected.id} defaults={defaults} /></div></details>
+        <details open className="mt-7 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6"><summary className="cursor-pointer list-none text-xl font-black text-[#0f2438] [&::-webkit-details-marker]:hidden">Completar configuración del periodo</summary><p className="mt-2 text-sm leading-6 text-slate-500">UF y UTM se precargan automáticamente. Complete y verifique los demás valores antes de guardar.</p><div className="mt-6 border-t border-slate-200 pt-6"><OfficialPayrollParametersForm key={`${selected.id}-${selectedDate}`} companyId={selected.id} defaults={defaults} /></div></details>
 
         <section className="mt-7 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6"><h2 className="text-xl font-black text-[#0f2438]">Historial de parámetros</h2><p className="mt-1 text-sm text-slate-500">Configuraciones específicas de empresa y globales disponibles para los últimos periodos.</p>{error ? <p className="mt-4 text-sm font-bold text-red-700">No fue posible cargar el historial.</p> : <div className="mt-5 grid gap-3">{((parameterRows ?? []) as Parameter[]).map((item) => <article key={item.id} className="flex flex-col gap-3 rounded-2xl border border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-black text-[#17324a]">{item.periodo.slice(0, 7)} · UF {formatCurrency(item.uf)} · UTM {formatCurrency(item.utm)}</p><p className="mt-1 text-xs text-slate-500">Ingreso mínimo {formatCurrency(item.ingreso_minimo)} · actualizado {formatDate(item.updated_at, { dateStyle: 'medium', timeStyle: 'short' })}</p><p className="mt-1 text-xs text-slate-400">{item.fuente || 'Fuente general no registrada'}</p></div><span className={`rounded-full px-3 py-1.5 text-xs font-black ${item.indicadores_verificados_at ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800'}`}>{item.indicadores_verificados_at ? 'Indicadores trazados' : 'Revisar trazabilidad'}</span></article>)}</div>}</section>
       </>}
