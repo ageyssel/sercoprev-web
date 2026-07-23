@@ -34,13 +34,24 @@ jobs:
             -o /tmp/domains.json
 
           echo 'DEPLOYMENTS_BEGIN'
-          jq -c '{success, errors, deployments: [.result[]? | {id, created_on, source, strategy, versions: [.versions[]? | {version_id, percentage}]}]}' /tmp/deployments.json
+          jq -c '
+            def deployments:
+              if (.result|type) == "array" then .result
+              elif (.result.deployments?|type) == "array" then .result.deployments
+              else [] end;
+            {success, errors, deployments: [deployments[]? |
+              if type == "array" then
+                {tuple_length:length, values:[.[] | if type == "object" then {id:(.id // .version_id // null), created_on:(.created_on // null), percentage:(.percentage // null)} else . end]}
+              else
+                {id:(.id // null), created_on:(.created_on // null), source:(.source // null), strategy:(.strategy // null), versions:[(.versions // [])[]? | {version_id:(.version_id // .id // null), percentage:(.percentage // null)}]}
+              end
+            ]}' /tmp/deployments.json || jq -c '{success, errors, result_type:(.result|type)}' /tmp/deployments.json
           echo 'DEPLOYMENTS_END'
 
           subdomain=$(jq -r '.result.subdomain // empty' /tmp/subdomain.json)
           echo "workers_subdomain=$subdomain"
           echo 'DOMAINS_BEGIN'
-          jq -c '{success, errors, domains: [.result[]? | {id, hostname, service, environment, zone_id}]}' /tmp/domains.json
+          jq -c '{success, errors, domains: [(.result // [])[]? | {id:(.id // null), hostname:(.hostname // null), service:(.service // null), environment:(.environment // null), zone_id:(.zone_id // null)}]}' /tmp/domains.json
           echo 'DOMAINS_END'
 
           if [ -n "$subdomain" ]; then
