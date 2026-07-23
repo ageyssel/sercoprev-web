@@ -15,16 +15,11 @@ export async function login(formData: FormData) {
     ? String(formData.get('password')).slice(0, 128)
     : ''
 
-  if (!EMAIL_PATTERN.test(email) || password.length < 8) {
-    redirect('/login?message=Credenciales incorrectas')
-  }
+  if (!EMAIL_PATTERN.test(email) || password.length < 8) redirect('/login?message=Credenciales incorrectas')
 
   const supabase = await createClient()
   const { data, error } = await supabase.auth.signInWithPassword({ email, password })
-
-  if (error || !data.user) {
-    redirect('/login?message=Credenciales incorrectas')
-  }
+  if (error || !data.user) redirect('/login?message=Credenciales incorrectas')
 
   const context = await resolveUserContext(supabase)
   if (!context) {
@@ -33,8 +28,7 @@ export async function login(formData: FormData) {
   }
 
   revalidatePath('/', 'layout')
-
-  if (context.kind === 'staff') redirect('/admin')
   if (context.mustChangePassword) redirect('/cuenta/cambiar-clave')
+  if (context.kind === 'staff') redirect('/admin')
   redirect('/dashboard')
 }
