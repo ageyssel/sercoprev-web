@@ -1,7 +1,7 @@
 'use client'
 
 import { createPortal } from 'react-dom'
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 
 type InfoTipPosition = {
   left: number
@@ -13,6 +13,7 @@ type InfoTipPosition = {
 const VIEWPORT_MARGIN = 12
 const POPOVER_GAP = 8
 const MAX_POPOVER_WIDTH = 304
+const ESTIMATED_POPOVER_HEIGHT = 132
 
 export function InfoTip({
   title = 'Información',
@@ -26,20 +27,17 @@ export function InfoTip({
   const triggerRef = useRef<HTMLButtonElement>(null)
   const popoverRef = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState(false)
-  const [mounted, setMounted] = useState(false)
   const [position, setPosition] = useState<InfoTipPosition>({ left: VIEWPORT_MARGIN, top: VIEWPORT_MARGIN, width: MAX_POPOVER_WIDTH, placement: 'bottom' })
   const popoverId = useId()
   const titleId = `${popoverId}-title`
-
-  useEffect(() => setMounted(true), [])
 
   const updatePosition = useCallback(() => {
     const trigger = triggerRef.current
     if (!trigger) return
 
     const triggerRect = trigger.getBoundingClientRect()
-    const width = Math.min(MAX_POPOVER_WIDTH, Math.max(220, window.innerWidth - VIEWPORT_MARGIN * 2))
-    const popoverHeight = popoverRef.current?.offsetHeight ?? 132
+    const width = Math.min(MAX_POPOVER_WIDTH, Math.max(160, window.innerWidth - VIEWPORT_MARGIN * 2))
+    const popoverHeight = popoverRef.current?.offsetHeight ?? ESTIMATED_POPOVER_HEIGHT
     const left = Math.min(
       Math.max(triggerRect.right - width, VIEWPORT_MARGIN),
       Math.max(VIEWPORT_MARGIN, window.innerWidth - width - VIEWPORT_MARGIN),
@@ -51,10 +49,6 @@ export function InfoTip({
 
     setPosition({ left, top, width, placement: fitsBelow ? 'bottom' : 'top' })
   }, [])
-
-  useLayoutEffect(() => {
-    if (open) updatePosition()
-  }, [children, open, title, updatePosition])
 
   useEffect(() => {
     const closeOtherInfoTips = (event: Event) => {
@@ -98,11 +92,15 @@ export function InfoTip({
   }, [open, updatePosition])
 
   const toggle = () => {
-    setOpen((current) => {
-      const next = !current
-      if (next) document.dispatchEvent(new CustomEvent('sercoprev:infotip-open', { detail: popoverId }))
-      return next
-    })
+    if (open) {
+      setOpen(false)
+      return
+    }
+
+    updatePosition()
+    document.dispatchEvent(new CustomEvent('sercoprev:infotip-open', { detail: popoverId }))
+    setOpen(true)
+    window.requestAnimationFrame(updatePosition)
   }
 
   return (
@@ -122,7 +120,7 @@ export function InfoTip({
         </button>
       </span>
 
-      {mounted && open && createPortal(
+      {open && createPortal(
         <div
           ref={popoverRef}
           id={popoverId}
