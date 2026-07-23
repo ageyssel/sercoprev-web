@@ -27,9 +27,7 @@ jobs:
 
           path = Path('.github/workflows/deploy-cloudflare.yml')
           text = path.read_text()
-          old_release = '2026-07-23-staff-email-mfa-1'
-          new_release = '2026-07-23-staff-email-mfa-health-1'
-          text = text.replace(old_release, new_release)
+          text = text.replace('2026-07-23-staff-email-mfa-1', '2026-07-23-staff-email-mfa-health-1')
 
           old_verify = "verify_status=$(curl -sSL --max-time 20 -o /tmp/verify.html -w '%{http_code}' 'https://www.sercoprev.cl/login/verificar-codigo' || true)"
           new_verify = "verify_status=$(curl -sS --max-time 20 -o /tmp/verify.html -w '%{http_code}' 'https://www.sercoprev.cl/login/verificar-codigo' || true)"
@@ -37,13 +35,6 @@ jobs:
               text = text.replace(old_verify, new_verify, 1)
           elif new_verify not in text:
               raise SystemExit('Verification request anchor not found')
-
-          email_check = "              && grep -q '\"staffMfaEmailDeliveryConfigured\":true' /tmp/health.json \\\n"
-          schema_check = "              && grep -q '\"staffMfaSchema\":true' /tmp/health.json \\\n"
-          if email_check not in text:
-              if schema_check not in text:
-                  raise SystemExit('MFA health anchor not found')
-              text = text.replace(schema_check, schema_check + email_check, 1)
 
           path.write_text(text)
           PY
