@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { isCurrentStaffMfaVerified } from '@/lib/staff-mfa'
 import { createClient } from '@/utils/supabase/server'
 import { resolveUserContext } from '@/utils/supabase/user-context'
 
@@ -35,8 +36,9 @@ export async function GET(request: NextRequest) {
   const supabase = await createClient()
   const context = await resolveUserContext(supabase)
   if (!context) return NextResponse.json({ error: 'UNAUTHENTICATED' }, { status: 401 })
-  if (context.mustChangePassword) return NextResponse.json({ error: 'PASSWORD_CHANGE_REQUIRED' }, { status: 403 })
   if (context.kind !== 'staff') return NextResponse.json({ error: 'FORBIDDEN' }, { status: 403 })
+  if (!await isCurrentStaffMfaVerified(context.user.id)) return NextResponse.json({ error: 'MFA_REQUIRED' }, { status: 403 })
+  if (context.mustChangePassword) return NextResponse.json({ error: 'PASSWORD_CHANGE_REQUIRED' }, { status: 403 })
 
   const empresaId = request.nextUrl.searchParams.get('empresa')?.trim() ?? ''
   const type = request.nextUrl.searchParams.get('tipo')?.trim() ?? ''

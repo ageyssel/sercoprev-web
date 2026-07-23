@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 import { createAdminClient } from '@/utils/supabase/admin'
 import { createClient } from '@/utils/supabase/server'
 import { resolveUserContext } from '@/utils/supabase/user-context'
+import { isCurrentStaffMfaVerified } from '@/lib/staff-mfa'
 
 export type PasswordActionState = { status: 'idle' | 'error'; message: string }
 
@@ -29,6 +30,9 @@ export async function cambiarClave(
   const supabase = await createClient()
   const context = await resolveUserContext(supabase)
   if (!context) return { status: 'error', message: 'La sesión expiró. Inicie sesión nuevamente.' }
+  if (context.kind === 'staff' && !await isCurrentStaffMfaVerified(context.user.id)) {
+    redirect('/login/verificar-codigo?message=Complete la verificación antes de cambiar su contraseña')
+  }
 
   const { error: passwordError } = await supabase.auth.updateUser({ password })
   if (passwordError) {
@@ -54,7 +58,7 @@ export async function cambiarClave(
     accion: 'cambiar_clave',
     entidad: context.kind === 'staff' ? 'usuario_organizacion' : 'empresa_usuario',
     entidad_id: context.user.id,
-    metadata: { primer_ingreso: true },
+    metadata: { primer_ingreso: true, segundo_factor_verificado: context.kind === 'staff' },
   })
 
   revalidatePath('/', 'layout')

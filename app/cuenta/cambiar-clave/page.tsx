@@ -2,14 +2,19 @@ import Image from 'next/image'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/utils/supabase/server'
 import { ChangePasswordForm } from './ChangePasswordForm'
+import { resolveUserContext } from '@/utils/supabase/user-context'
+import { isCurrentStaffMfaVerified } from '@/lib/staff-mfa'
 
 export const dynamic = 'force-dynamic'
 
 export default async function ChangePasswordPage() {
   const supabase = await createClient()
-  const { data: { user }, error } = await supabase.auth.getUser()
+  const context = await resolveUserContext(supabase)
 
-  if (error || !user) redirect('/login')
+  if (!context) redirect('/login')
+  if (context.kind === 'staff' && !await isCurrentStaffMfaVerified(context.user.id)) {
+    redirect('/login/verificar-codigo?message=Complete la verificación antes de cambiar su contraseña')
+  }
 
   return (
     <main className="min-h-screen bg-[#f8fafc] flex items-center justify-center p-4">

@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { AdminShell } from '@/components/admin/AdminShell'
 import { createClient } from '@/utils/supabase/server'
 import { resolveUserContext } from '@/utils/supabase/user-context'
+import { isCurrentStaffMfaVerified } from '@/lib/staff-mfa'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -19,8 +20,9 @@ export default async function AdminLayout({ children }: { children: ReactNode })
   }
 
   if (!context) redirect('/login?message=La sesión no está habilitada para este portal')
-  if (context.mustChangePassword) redirect('/cuenta/cambiar-clave')
   if (context.kind !== 'staff') redirect('/dashboard')
+  if (!await isCurrentStaffMfaVerified(context.user.id)) redirect('/login/verificar-codigo?message=Complete la verificación enviada a su correo')
+  if (context.mustChangePassword) redirect('/cuenta/cambiar-clave')
 
   return <AdminShell adminName={`${context.displayName} · ${context.role}`}>{children}</AdminShell>
 }

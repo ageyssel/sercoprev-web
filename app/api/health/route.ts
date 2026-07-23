@@ -4,7 +4,7 @@ import { getApplicationBaseUrl, getSupabasePublicConfig } from '@/utils/supabase
 
 export const dynamic = 'force-dynamic'
 
-const RELEASE = '2026-07-23-closed-record-integrity-1'
+const RELEASE = '2026-07-23-staff-email-mfa-1'
 const OFFICIAL_DATA_MAX_AGE_MS = 48 * 60 * 60 * 1000
 
 function currentChilePeriod() {
@@ -36,6 +36,7 @@ export async function GET() {
   let officialDataFreshness = false
   let closedRecordsProtectionSchema = false
   let userAccessSchema = false
+  let staffMfaSchema = false
   let documentIntakeSchema = false
   let administrator = false
   let documentStorage = false
@@ -157,6 +158,16 @@ export async function GET() {
     ])
     userAccessSchema = userChecks.every((result) => !result.error)
 
+    const [challengeCheck, sessionCheck, mfaMigration] = await Promise.all([
+      supabase.from('staff_mfa_challenges').select('id, user_id, expires_at, consumed_at, attempts').limit(1),
+      supabase.from('staff_mfa_sessions').select('id, user_id, expires_at, revoked_at').limit(1),
+      supabase.from('sercoprev_schema_migrations').select('filename').eq('filename', '202607230015_staff_email_mfa.sql').maybeSingle(),
+    ])
+    staffMfaSchema = !challengeCheck.error
+      && !sessionCheck.error
+      && !mfaMigration.error
+      && mfaMigration.data?.filename === '202607230015_staff_email_mfa.sql'
+
     const intakeChecks = await Promise.all([
       supabase.from('lotes_documentales').select('id, estado').limit(1),
       supabase.from('archivos_ingesta').select('id, estado, confianza').limit(1),
@@ -178,6 +189,7 @@ export async function GET() {
     officialDataFreshness = false
     closedRecordsProtectionSchema = false
     userAccessSchema = false
+    staffMfaSchema = false
     documentIntakeSchema = false
     administrator = false
     documentStorage = false
@@ -196,6 +208,7 @@ export async function GET() {
     officialDataFreshness,
     closedRecordsProtectionSchema,
     userAccessSchema,
+    staffMfaSchema,
     documentIntakeSchema,
     administrator,
     documentStorage,
