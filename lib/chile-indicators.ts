@@ -1,4 +1,5 @@
 import { createAdminClient } from '@/utils/supabase/admin'
+import type { PayrollTaxBracket } from '@/lib/payroll'
 
 const MONTH_NAMES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
 const MONTH_ABBREVIATIONS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
@@ -86,6 +87,25 @@ async function fetchOfficialPage(url: string) {
   return response.text()
 }
 
+export function buildMonthlyTaxBrackets(utm: number): PayrollTaxBracket[] {
+  const safeUtm = Number.isFinite(utm) && utm > 0 ? utm : 0
+  const lowerMultiples = [0, 13.5, 30, 50, 70, 90, 120, 310]
+  const upperMultiples: Array<number | null> = [13.5, 30, 50, 70, 90, 120, 310, null]
+  const factors = [0, 0.04, 0.08, 0.135, 0.23, 0.304, 0.35, 0.4]
+  const rebateMultiples = [0, 0.54, 1.74, 4.49, 11.14, 17.8, 23.32, 38.82]
+
+  return lowerMultiples.map((multiple, index) => {
+    const from = index === 0 ? 0 : Number((safeUtm * multiple + 0.01).toFixed(2))
+    const upper = upperMultiples[index]
+    return {
+      from,
+      to: upper === null ? null : Number((safeUtm * upper).toFixed(2)),
+      factor: factors[index],
+      rebate: Number((safeUtm * rebateMultiples[index]).toFixed(2)),
+    }
+  })
+}
+
 export async function getOfficialIndicators(inputDate: string): Promise<OfficialIndicators> {
   const parsed = new Date(`${inputDate}T12:00:00Z`)
   if (Number.isNaN(parsed.getTime())) throw new Error('INVALID_INDICATOR_DATE')
@@ -130,7 +150,9 @@ export async function getOfficialIndicators(inputDate: string): Promise<Official
     obtenido_at: now,
   }
 
-  const rowsToSave = [cachedUf ? null : uf, cachedUtm ? null : utm].filter(Boolean)
+  const rowsToSave: IndicatorRow[] = []
+  if (!cachedUf) rowsToSave.push(uf)
+  if (!cachedUtm) rowsToSave.push(utm)
   if (rowsToSave.length > 0) {
     const { error } = await admin.from('indicadores_oficiales').upsert(rowsToSave, { onConflict: 'tipo,fecha_referencia' })
     if (error) console.error('No fue posible guardar indicadores oficiales:', error)
