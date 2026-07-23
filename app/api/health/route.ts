@@ -63,6 +63,7 @@ export async function GET() {
       supabase.from('parametros_remuneraciones').select('id, periodo').limit(1),
       supabase.from('periodos_remuneraciones').select('id, periodo, estado').limit(1),
       supabase.from('conceptos_remuneracion').select('id, codigo').limit(1),
+      supabase.from('novedades_remuneraciones').select('id, periodo_id, trabajador_id').limit(1),
       supabase.from('liquidaciones').select('id, estado').limit(1),
       supabase.from('vacaciones').select('id, estado').limit(1),
       supabase.from('licencias_medicas').select('id, estado').limit(1),
@@ -75,10 +76,11 @@ export async function GET() {
       supabase.from('periodos_contables').select('id, periodo').limit(1),
       supabase.from('asientos_contables').select('id, numero, estado').limit(1),
       supabase.from('movimientos_contables').select('id, debe, haber').limit(1),
-      supabase.from('documentos_tributarios').select('id, tipo_registro').limit(1),
+      supabase.from('documentos_tributarios').select('id, tipo_registro, fingerprint').limit(1),
       supabase.from('cuentas_bancarias').select('id').limit(1),
-      supabase.from('movimientos_bancarios').select('id, estado').limit(1),
+      supabase.from('movimientos_bancarios').select('id, estado, fingerprint').limit(1),
       supabase.from('conciliaciones_bancarias').select('id').limit(1),
+      supabase.from('importaciones_contables').select('id, tipo, estado').limit(1),
     ])
     accountingSchema = accountingChecks.every((result) => !result.error)
 
