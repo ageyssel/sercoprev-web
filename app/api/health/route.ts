@@ -4,7 +4,24 @@ import { getApplicationBaseUrl, getSupabasePublicConfig } from '@/utils/supabase
 
 export const dynamic = 'force-dynamic'
 
-const RELEASE = '2026-07-23-closed-record-integrity-1'
+const RELEASE = '2026-07-23-official-sync-operational-1'
+const OFFICIAL_DATA_MAX_AGE_MS = 48 * 60 * 60 * 1000
+
+function currentChilePeriod() {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Santiago',
+    year: 'numeric',
+    month: '2-digit',
+  }).formatToParts(new Date())
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]))
+  return `${values.year}-${values.month}-01`
+}
+
+function recentlyObtained(value: string | null | undefined) {
+  if (!value) return false
+  const timestamp = new Date(value).getTime()
+  return Number.isFinite(timestamp) && timestamp >= Date.now() - OFFICIAL_DATA_MAX_AGE_MS
+}
 
 export async function GET() {
   let publicSupabaseConfig = false
@@ -16,6 +33,7 @@ export async function GET() {
   let officialIndicatorsSchema = false
   let officialDataSchema = false
   let officialDataHistorySchema = false
+  let officialDataFreshness = false
   let closedRecordsProtectionSchema = false
   let userAccessSchema = false
   let documentIntakeSchema = false
@@ -95,6 +113,24 @@ export async function GET() {
     ])
     officialDataHistorySchema = historyChecks.every((result) => !result.error)
 
+    const currentPeriod = currentChilePeriod()
+    const [siiFreshness, previredFreshness, bancoFreshness] = await Promise.all([
+      supabase.from('indicadores_oficiales').select('tipo, obtenido_at').in('tipo', ['UF', 'UTM']).order('obtenido_at', { ascending: false }).limit(10),
+      supabase.from('datos_oficiales').select('codigo, obtenido_at').eq('fuente_codigo', 'PREVIRED').eq('periodo', currentPeriod).limit(100),
+      supabase.from('datos_oficiales').select('codigo, obtenido_at').eq('fuente_codigo', 'BANCO_CENTRAL').eq('periodo', currentPeriod).limit(100),
+    ])
+    const siiRows = siiFreshness.data ?? []
+    const previredRows = previredFreshness.data ?? []
+    const bancoRows = bancoFreshness.data ?? []
+    officialDataFreshness = !siiFreshness.error
+      && !previredFreshness.error
+      && !bancoFreshness.error
+      && ['UF', 'UTM'].every((type) => siiRows.some((row) => row.tipo === type && recentlyObtained(row.obtenido_at)))
+      && previredRows.some((row) => row.codigo === 'INGRESO_MINIMO_GENERAL' && recentlyObtained(row.obtenido_at))
+      && previredRows.some((row) => row.codigo.startsWith('TASA_AFP_') && recentlyObtained(row.obtenido_at))
+      && bancoRows.some((row) => row.codigo === 'DOLAR_OBSERVADO' && recentlyObtained(row.obtenido_at))
+      && bancoRows.some((row) => row.codigo === 'EURO' && recentlyObtained(row.obtenido_at))
+
     const { data: protectionMigration, error: protectionError } = await supabase
       .from('sercoprev_schema_migrations')
       .select('filename')
@@ -139,6 +175,7 @@ export async function GET() {
     officialIndicatorsSchema = false
     officialDataSchema = false
     officialDataHistorySchema = false
+    officialDataFreshness = false
     closedRecordsProtectionSchema = false
     userAccessSchema = false
     documentIntakeSchema = false
@@ -156,6 +193,7 @@ export async function GET() {
     officialIndicatorsSchema,
     officialDataSchema,
     officialDataHistorySchema,
+    officialDataFreshness,
     closedRecordsProtectionSchema,
     userAccessSchema,
     documentIntakeSchema,
