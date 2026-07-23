@@ -5,11 +5,11 @@ import { InfoTip } from '@/components/ui/InfoTip'
 import {
   crearContrato,
   crearMovimientoRemuneracion,
-  crearPeriodoRemuneraciones,
   crearTrabajador,
   guardarParametrosRemuneraciones,
   type PayrollActionState,
 } from '@/app/admin/payroll-actions'
+import { abrirPeriodoRemuneracionesSeguro } from '@/app/admin/payroll-period-actions'
 
 const initialState: PayrollActionState = { status: 'idle', message: '' }
 const inputClass = 'h-11 rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium text-[#17324a] outline-none transition focus:border-[#134b78] focus:ring-4 focus:ring-[#134b78]/10'
@@ -44,7 +44,7 @@ export function WorkerForm({ companyId, costCenters }: { companyId: string; cost
         <Field label="AFP" name="afp" placeholder="Capital, Habitat…" help="La tasa se obtiene desde los parámetros legales del periodo usando el nombre de AFP informado aquí." />
         <Select label="Salud" name="salud_tipo" options={['Fonasa', 'Isapre', 'Sin cotización']} help="Fonasa aplica la tasa legal; Isapre compara la cotización legal con el plan expresado en UF, según la configuración." />
         <Field label="Institución de salud" name="salud_institucion" />
-        <Field label="Plan Isapre UF" name="salud_plan_uf" inputMode="decimal" help="Cantidad de UF pactadas en el plan. Se convierte a pesos con la UF oficial de la fecha usada por el periodo." />
+        <Field label="Plan Isapre UF" name="salud_plan_uf" inputMode="decimal" help="Cantidad de UF pactadas en el plan. Se convierte a pesos con la UF oficial de la fecha fijada para el periodo." />
         <label className="grid gap-2 text-sm font-bold text-slate-700">Centro de costo<select name="centro_costo_id" className={inputClass}><option value="">Sin asignar</option>{costCenters.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
       </div>
       <label className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm font-bold text-slate-700"><input type="checkbox" name="afc_aplica" defaultChecked />Aplica Seguro de Cesantía <InfoTip>Determina si el motor calcula cotización AFC según el tipo de contrato y las tasas configuradas para el periodo.</InfoTip></label>
@@ -79,11 +79,11 @@ export function ContractForm({ workers }: { workers: SelectOption[] }) {
 }
 
 export function PayrollPeriodForm({ companyId }: { companyId: string }) {
-  const [state, action, pending] = useActionState(crearPeriodoRemuneraciones, initialState)
+  const [state, action, pending] = useActionState(abrirPeriodoRemuneracionesSeguro, initialState)
   return (
     <form action={action} className="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-end">
       <input type="hidden" name="empresa_id" value={companyId} />
-      <Field label="Periodo" name="periodo" type="month" required help="El sistema exige parámetros legales guardados para el mismo mes antes de abrir el periodo." />
+      <Field label="Periodo" name="periodo" type="month" required help="Al abrir el periodo quedan fijados la UF del día seleccionado, la UTM mensual, las tasas y los topes guardados. Las consultas posteriores no reemplazan esos valores." />
       <Submit pending={pending} text="Abrir periodo" />
       <div className="sm:col-span-2"><Feedback state={state} /></div>
     </form>

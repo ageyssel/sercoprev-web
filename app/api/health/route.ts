@@ -4,7 +4,7 @@ import { getApplicationBaseUrl, getSupabasePublicConfig } from '@/utils/supabase
 
 export const dynamic = 'force-dynamic'
 
-const RELEASE = '2026-07-23-automatic-official-data-2'
+const RELEASE = '2026-07-23-immutable-payroll-indicators-1'
 
 export async function GET() {
   let publicSupabaseConfig = false
@@ -15,6 +15,7 @@ export async function GET() {
   let accountingSchema = false
   let officialIndicatorsSchema = false
   let officialDataSchema = false
+  let officialDataHistorySchema = false
   let userAccessSchema = false
   let documentIntakeSchema = false
   let administrator = false
@@ -65,7 +66,7 @@ export async function GET() {
       supabase.from('trabajadores').select('id, empresa_id, estado').limit(1),
       supabase.from('contratos_trabajo').select('id, trabajador_id, estado').limit(1),
       supabase.from('parametros_remuneraciones').select('id, periodo, uf_fecha, utm_periodo, fuente_uf, fuente_utm, indicadores_verificados_at, fuentes_automaticas, parametros_automaticos_at').limit(1),
-      supabase.from('periodos_remuneraciones').select('id, periodo, estado').limit(1),
+      supabase.from('periodos_remuneraciones').select('id, periodo, estado, parametros_id').limit(1),
       supabase.from('conceptos_remuneracion').select('id, codigo').limit(1),
       supabase.from('novedades_remuneraciones').select('id, periodo_id, trabajador_id').limit(1),
       supabase.from('liquidaciones').select('id, estado').limit(1),
@@ -86,6 +87,12 @@ export async function GET() {
       supabase.from('parametros_remuneraciones').select('id, fuentes_automaticas, parametros_automaticos_at').limit(1),
     ])
     officialDataSchema = officialDataChecks.every((result) => !result.error)
+
+    const historyChecks = await Promise.all([
+      supabase.from('datos_oficiales_versiones').select('id, fuente_codigo, codigo, fecha_referencia, periodo, valor, unidad, fuente_url, obtenido_at').limit(1),
+      supabase.from('sercoprev_schema_migrations').select('filename').eq('filename', '202607230013_immutable_payroll_and_indicator_history.sql').limit(1),
+    ])
+    officialDataHistorySchema = historyChecks.every((result) => !result.error)
 
     const accountingChecks = await Promise.all([
       supabase.from('plan_cuentas').select('id, codigo').limit(1),
@@ -123,6 +130,7 @@ export async function GET() {
     accountingSchema = false
     officialIndicatorsSchema = false
     officialDataSchema = false
+    officialDataHistorySchema = false
     userAccessSchema = false
     documentIntakeSchema = false
     administrator = false
@@ -138,6 +146,7 @@ export async function GET() {
     accountingSchema,
     officialIndicatorsSchema,
     officialDataSchema,
+    officialDataHistorySchema,
     userAccessSchema,
     documentIntakeSchema,
     administrator,

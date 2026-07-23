@@ -29,6 +29,7 @@ const groups: Group[] = [
   {
     label: 'Especialidades',
     items: [
+      { href: '/admin/indicadores', label: 'Indicadores oficiales', icon: 'money', badge: 'Auto' },
       { href: '/admin/contabilidad', label: 'Contabilidad y rentabilidad', icon: 'document' },
       { href: '/admin/remuneraciones', label: 'Remuneraciones', icon: 'briefcase' },
     ],

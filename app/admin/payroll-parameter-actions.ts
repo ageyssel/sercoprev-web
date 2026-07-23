@@ -119,6 +119,24 @@ export async function guardarParametrosRemuneracionesTrazables(
     const sourceUf = clean(formData.get('fuente_uf'), 500) || null
     const sourceUtm = clean(formData.get('fuente_utm'), 500) || null
 
+    let existingQuery = adminClient.from('parametros_remuneraciones').select('id').eq('periodo', period)
+    existingQuery = companyId ? existingQuery.eq('empresa_id', companyId) : existingQuery.is('empresa_id', null)
+    const { data: existingConfiguration, error: existingError } = await existingQuery.maybeSingle()
+    if (existingError) throw existingError
+    if (existingConfiguration?.id) {
+      const { count, error: usageError } = await adminClient
+        .from('periodos_remuneraciones')
+        .select('id', { count: 'exact', head: true })
+        .eq('parametros_id', existingConfiguration.id)
+      if (usageError) throw usageError
+      if ((count ?? 0) > 0) {
+        return {
+          status: 'error',
+          message: 'Esta configuración ya está fijada en un periodo de remuneraciones y no puede modificarse. Cree una nueva configuración o una rectificación trazable.',
+        }
+      }
+    }
+
     let official: Awaited<ReturnType<typeof getAutomaticPayrollDefaults>> | null = null
     try {
       official = await getAutomaticPayrollDefaults(period)
@@ -197,6 +215,10 @@ export async function guardarParametrosRemuneracionesTrazables(
     return { status: 'success', message: manualOverrides.length > 0 ? `Parámetros guardados. Se registraron ${manualOverrides.length} anulaciones manuales de valores automáticos.` : 'Parámetros guardados con trazabilidad automática de fuentes oficiales.' }
   } catch (error) {
     console.error('Error al guardar parámetros trazables:', error)
+    const errorMessage = typeof error === 'object' && error && 'message' in error ? String(error.message) : String(error)
+    if (errorMessage.includes('PAYROLL_PARAMETERS_LOCKED_BY_PERIOD')) {
+      return { status: 'error', message: 'Los parámetros ya fueron utilizados por un periodo y permanecen inalterables para proteger el cálculo histórico.' }
+    }
     return { status: 'error', message: 'No fue posible guardar los parámetros.' }
   }
 }
