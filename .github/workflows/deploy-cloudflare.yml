@@ -125,6 +125,16 @@ jobs:
             fi
           done
 
+          if [ -n "$direct_url" ] \
+            && [[ "$direct_url" != postgresql://* ]] \
+            && [[ "$direct_url" != postgres://* ]]; then
+            if [ -z "$password" ]; then
+              password="$direct_url"
+            fi
+            direct_url=''
+            echo 'SUPABASE_DB_URL contains a database password; resolving the compatible Session Pooler automatically.'
+          fi
+
           if [ -n "$direct_url" ]; then
             echo "::add-mask::$direct_url"
             if psql "$direct_url" -v ON_ERROR_STOP=1 -Atqc 'select 1' >/dev/null 2>&1; then
@@ -197,7 +207,7 @@ jobs:
             done
           done
 
-          echo '::error title=Supabase database connection failed::The URL and compatible pooler endpoints rejected the configured credentials. Replace SUPABASE_DB_URL with the exact Session Pooler URI shown in Supabase Connect.'
+          echo '::error title=Supabase database connection failed::The configured database password was rejected by the supported pooler endpoints. Confirm that SUPABASE_DB_URL contains the current database password or replace it with the exact Session Pooler URI shown in Supabase Connect.'
           exit 1
 
       - name: Apply pending Supabase migrations
