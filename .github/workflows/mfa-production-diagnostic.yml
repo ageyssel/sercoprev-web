@@ -34,3 +34,74 @@ jobs:
           echo 'VERIFY_HEADERS_BEGIN'
           cat /tmp/verify.headers || true
           echo 'VERIFY_HEADERS_END'
+
+  diagnose-supabase:
+    if: github.head_ref == 'ops/mfa-production-diagnostic'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      SUPABASE_URL: https://kxrxlygnhukfmdgqhoaz.supabase.co
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund --silent
+
+      - name: Inspect health dependencies without personal data
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { createClient } from '@supabase/supabase-js'
+
+          const client = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SECRET_KEY, {
+            auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
+          })
+
+          const serializeError = (error) => error ? {
+            code: error.code ?? null,
+            message: error.message ?? null,
+            details: error.details ?? null,
+            hint: error.hint ?? null,
+            status: error.status ?? null,
+          } : null
+
+          const checks = [
+            ['admin_profile', () => client.from('empresas').select('user_id', { count: 'exact' }).eq('es_admin', true).limit(5)],
+            ['lotes_documentales', () => client.from('lotes_documentales').select('id, estado', { count: 'exact' }).limit(1)],
+            ['archivos_ingesta', () => client.from('archivos_ingesta').select('id, estado, confianza', { count: 'exact' }).limit(1)],
+            ['documentos', () => client.from('documentos').select('id, lote_id, clasificacion_estado, fuente_carga', { count: 'exact' }).limit(1)],
+            ['staff_mfa_challenges', () => client.from('staff_mfa_challenges').select('id', { count: 'exact' }).limit(1)],
+            ['staff_mfa_sessions', () => client.from('staff_mfa_sessions').select('id', { count: 'exact' }).limit(1)],
+          ]
+
+          for (const [name, run] of checks) {
+            const result = await run()
+            console.log(JSON.stringify({ name, ok: !result.error, count: result.count ?? null, rows: result.data?.length ?? 0, error: serializeError(result.error) }))
+          }
+
+          const adminProfile = await client.from('empresas').select('user_id').eq('es_admin', true).limit(1).maybeSingle()
+          if (adminProfile.data?.user_id) {
+            const authUser = await client.auth.admin.getUserById(adminProfile.data.user_id)
+            console.log(JSON.stringify({ name: 'administrator_auth_lookup', ok: !authUser.error && Boolean(authUser.data.user), error: serializeError(authUser.error) }))
+          } else {
+            console.log(JSON.stringify({ name: 'administrator_auth_lookup', ok: false, reason: 'NO_ADMIN_PROFILE', error: serializeError(adminProfile.error) }))
+          }
+
+          const buckets = await client.storage.listBuckets()
+          console.log(JSON.stringify({
+            name: 'storage_buckets',
+            ok: !buckets.error,
+            documentosPrivate: Boolean(buckets.data?.some((bucket) => bucket.id === 'documentos' && bucket.public === false)),
+            bucketCount: buckets.data?.length ?? 0,
+            error: serializeError(buckets.error),
+          }))
+          NODE
