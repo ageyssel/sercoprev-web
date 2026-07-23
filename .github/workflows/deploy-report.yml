@@ -3,7 +3,7 @@ name: Report Deployment
 on:
   workflow_run:
     workflows: ["Deploy Cloudflare"]
-    types: [completed]
+    types: [requested, in_progress, completed]
 
 permissions:
   contents: read
@@ -13,21 +13,27 @@ jobs:
   report:
     runs-on: ubuntu-24.04
     steps:
-      - name: Comment deployment result
+      - name: Comment deployment status
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
-          RUN_ID: ${{ github.event.workflow_run.id }}
           RUN_URL: ${{ github.event.workflow_run.html_url }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          ACTION: ${{ github.event.action }}
+          STATUS: ${{ github.event.workflow_run.status }}
           CONCLUSION: ${{ github.event.workflow_run.conclusion }}
         shell: bash
         run: |
           set -euo pipefail
-          if [ "$CONCLUSION" = 'success' ]; then
+          if [ "$ACTION" = 'completed' ] && [ "$CONCLUSION" = 'success' ]; then
             summary='Despliegue Cloudflare completado correctamente.'
-          else
+          elif [ "$ACTION" = 'completed' ]; then
             summary='Despliegue Cloudflare finalizado con error; producción permanece en la última versión verificada.'
+          elif [ "$ACTION" = 'in_progress' ]; then
+            summary='Despliegue Cloudflare en ejecución.'
+          else
+            summary='Despliegue Cloudflare solicitado.'
           fi
-          body=$(printf '%s\n\n- Resultado: `%s`\n- Commit: `%s`\n- Run: %s\n' "$summary" "$CONCLUSION" "$HEAD_SHA" "$RUN_URL")
+          result="${CONCLUSION:-$STATUS}"
+          body=$(printf '%s\n\n- Evento: `%s`\n- Estado: `%s`\n- Commit: `%s`\n- Run: %s\n' "$summary" "$ACTION" "$result" "$HEAD_SHA" "$RUN_URL")
           gh issue comment 13 --repo "$REPOSITORY" --body "$body"
