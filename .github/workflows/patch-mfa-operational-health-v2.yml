@@ -18,99 +18,27 @@ jobs:
           ref: hotfix/mfa-operational-health-v2
           fetch-depth: 0
 
-      - name: Apply operational health corrections
+      - name: Align deployment release
         shell: bash
         run: |
           set -euo pipefail
           python - <<'PY'
-          import re
-          import textwrap
           from pathlib import Path
-
-          health = Path('app/api/health/route.ts')
-          text = health.read_text()
-          text = text.replace('2026-07-23-staff-email-mfa-health-1', '2026-07-23-staff-email-mfa-health-2')
-
-          intake = textwrap.dedent('''
-            const documentIntakeSchema = await safeCheck('DOCUMENT_INTAKE_SCHEMA', async () => {
-              const supabase = createAdminClient()
-              const [lots, files, documents, migration] = await Promise.all([
-                supabase.from('lotes_documentales').select('id').limit(1),
-                supabase.from('archivos_ingesta').select('id').limit(1),
-                supabase.from('documentos').select('id').limit(1),
-                supabase.from('sercoprev_schema_migrations').select('filename').eq('filename', '202607230006_document_intake_queue.sql').maybeSingle(),
-              ])
-              return !lots.error
-                && !files.error
-                && !documents.error
-                && !migration.error
-                && migration.data?.filename === '202607230006_document_intake_queue.sql'
-            })
-          ''').strip('\n')
-          text, count = re.subn(
-              r"  const documentIntakeSchema = await safeCheck\('DOCUMENT_INTAKE_SCHEMA', async \(\) => \{.*?\n  \}\)\n\n  const administrator",
-              intake + '\n\n  const administrator',
-              text,
-              count=1,
-              flags=re.S,
-          )
-          if count != 1:
-              raise SystemExit('Document intake block not found')
-
-          administrator = textwrap.dedent('''
-            const administrator = await safeCheck('ADMINISTRATOR', async () => {
-              const directory = createAdminClient()
-              const [directAdmin, staffAdmin] = await Promise.all([
-                directory.from('empresas').select('user_id').eq('es_admin', true).not('user_id', 'is', null).limit(1),
-                directory.from('usuarios_organizacion').select('user_id').eq('activo', true).in('rol', ['Superadministrador', 'Administrador']).limit(1),
-              ])
-              if (directAdmin.error || staffAdmin.error) return false
-              return Boolean(directAdmin.data?.[0]?.user_id ?? staffAdmin.data?.[0]?.user_id)
-            })
-          ''').strip('\n')
-          text, count = re.subn(
-              r"  const administrator = await safeCheck\('ADMINISTRATOR', async \(\) => \{.*?\n  \}\)\n\n  const documentStorage",
-              administrator + '\n\n  const documentStorage',
-              text,
-              count=1,
-              flags=re.S,
-          )
-          if count != 1:
-              raise SystemExit('Administrator block not found')
-
-          storage = textwrap.dedent('''
-            const documentStorage = await safeCheck('DOCUMENT_STORAGE', async () => {
-              const storage = createAdminClient().storage
-              const buckets = await storage.listBuckets()
-              if (!buckets.error && buckets.data?.some((bucket) => bucket.id === 'documentos' && bucket.public === false)) return true
-
-              // Verificación funcional de respaldo: confirma acceso al bucket conocido
-              // incluso cuando el listado administrativo de buckets no está disponible.
-              const probe = await storage.from('documentos').list('', { limit: 1, offset: 0 })
-              return !probe.error
-            })
-          ''').strip('\n')
-          text, count = re.subn(
-              r"  const documentStorage = await safeCheck\('DOCUMENT_STORAGE', async \(\) => \{.*?\n  \}\)\n\n  const checks",
-              storage + '\n\n  const checks',
-              text,
-              count=1,
-              flags=re.S,
-          )
-          if count != 1:
-              raise SystemExit('Document storage block not found')
-
-          health.write_text(text)
-
-          version = Path('app/api/version/route.ts')
-          version.write_text(version.read_text().replace('2026-07-23-staff-email-mfa-health-1', '2026-07-23-staff-email-mfa-health-2'))
-
-          deploy = Path('.github/workflows/deploy-cloudflare.yml')
-          deploy.write_text(deploy.read_text().replace('2026-07-23-staff-email-mfa-health-1', '2026-07-23-staff-email-mfa-health-2'))
+          path = Path('.github/workflows/deploy-cloudflare.yml')
+          text = path.read_text()
+          old = '2026-07-23-staff-email-mfa-health-1'
+          new = '2026-07-23-staff-email-mfa-health-2'
+          if old not in text and new not in text:
+              raise SystemExit('Release marker not found')
+          path.write_text(text.replace(old, new))
           PY
 
+          if git diff --quiet; then
+            echo 'Deployment release already aligned.'
+            exit 0
+          fi
           git config user.name 'SERCOPREV Automation'
           git config user.email 'actions@users.noreply.github.com'
-          git add app/api/health/route.ts app/api/version/route.ts .github/workflows/deploy-cloudflare.yml
-          git commit -m 'Ajustar health a comprobaciones operativas reales'
+          git add .github/workflows/deploy-cloudflare.yml
+          git commit -m 'Alinear release productivo MFA v2'
           git push origin HEAD:hotfix/mfa-operational-health-v2
