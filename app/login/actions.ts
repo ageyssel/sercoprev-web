@@ -21,7 +21,15 @@ export async function login(formData: FormData) {
   const { data, error } = await supabase.auth.signInWithPassword({ email, password })
   if (error || !data.user) redirect('/login?message=Credenciales incorrectas')
 
-  const context = await resolveUserContext(supabase)
+  let context = null
+  try {
+    context = await resolveUserContext(supabase)
+  } catch (contextError) {
+    console.error('LOGIN_CONTEXT_RESOLUTION_FAILED', contextError)
+    await supabase.auth.signOut()
+    redirect('/login?message=No fue posible completar el acceso. Intente nuevamente')
+  }
+
   if (!context) {
     await supabase.auth.signOut()
     redirect('/login?message=La cuenta no está habilitada para el portal')
