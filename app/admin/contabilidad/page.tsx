@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { AppIcon, type AppIconName } from '@/components/AppIcon'
+import { CompanySelector } from '@/components/admin/ModulePageHeader'
 import { InfoTip } from '@/components/ui/InfoTip'
 import { formatCurrency } from '@/lib/format'
 import { createClient } from '@/utils/supabase/server'
@@ -35,7 +36,7 @@ export default async function AccountingOverview({ searchParams }: { searchParam
     { href: `/admin/contabilidad/diario${companyQuery}`, title: 'Libro diario', description: 'Creación, revisión y contabilización de asientos con control automático de cuadratura.', icon: 'document', badge: `${draftEntries} borradores` },
     { href: `/admin/contabilidad/documentos${companyQuery}`, title: 'Compras y ventas', description: 'Documentos tributarios, IVA, contrapartes, folios y base para centralización.', icon: 'money' },
     { href: `/admin/contabilidad/importaciones${companyQuery}`, title: 'RCV y cartolas', description: 'Carga masiva, deduplicación, cuentas bancarias y conciliación exacta.', icon: 'upload', badge: `${banks.count ?? 0} bancos` },
-    { href: `/admin/contabilidad/reportes${companyQuery}`, title: 'Libros y reportes', description: 'Balance de comprobación, mayor, resultados y balance clasificado.', icon: 'tasks' },
+    { href: `/admin/contabilidad/reportes${companyQuery}`, title: 'Libros, rentabilidad y reportes', description: 'Balance de comprobación, mayor, estado de resultados, rentabilidad y balance clasificado.', icon: 'tasks' },
   ]
 
   return (
@@ -43,15 +44,10 @@ export default async function AccountingOverview({ searchParams }: { searchParam
       <header className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="text-xs font-black uppercase tracking-[0.18em] text-[#a47b24]">Macromódulo financiero y tributario</p>
-          <h1 className="mt-2 text-3xl font-black tracking-tight text-[#0f2438] sm:text-4xl">Contabilidad</h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">Una portada ejecutiva y pantallas separadas por proceso: configuración, registro, importación, conciliación y reportes.</p>
+          <h1 className="mt-2 text-3xl font-black tracking-tight text-[#0f2438] sm:text-4xl">Contabilidad y rentabilidad</h1>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">Una portada ejecutiva y pantallas separadas por proceso: configuración, registro, importación, conciliación, rentabilidad y reportes.</p>
         </div>
-        <form method="get" className="flex gap-2">
-          <select name="empresa" defaultValue={selected?.id ?? ''} className="h-11 min-w-[280px] rounded-xl border border-slate-300 bg-white px-3 text-sm font-bold">
-            {companies.map((company) => <option key={company.id} value={company.id}>{company.nombre_fantasia || company.razon_social}</option>)}
-          </select>
-          <button className="h-11 rounded-xl bg-[#0f2438] px-5 text-sm font-black text-white">Abrir</button>
-        </form>
+        <CompanySelector companies={companies} selectedId={selected?.id} />
       </header>
 
       {!selected ? <Empty /> : <>
