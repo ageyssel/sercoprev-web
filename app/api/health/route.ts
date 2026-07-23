@@ -4,7 +4,7 @@ import { getApplicationBaseUrl, getSupabasePublicConfig } from '@/utils/supabase
 
 export const dynamic = 'force-dynamic'
 
-const RELEASE = '2026-07-23-automatic-official-data-1'
+const RELEASE = '2026-07-23-automatic-official-data-2'
 
 export async function GET() {
   let publicSupabaseConfig = false
