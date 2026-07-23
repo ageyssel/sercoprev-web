@@ -1,0 +1,137 @@
+name: Official Parser Production Test
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare-production
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    if: github.head_ref == 'ops/official-parser-production-test'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 9021b712f9a73815e6b333a4870e0021
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+      NEXT_PUBLIC_SUPABASE_URL: https://kxrxlygnhukfmdgqhoaz.supabase.co
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_LpXB0WEd-O8Y5ARxeEZ2hQ_xhw3jP1n
+      APP_BASE_URL: https://www.sercoprev.cl
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      WHATSAPP_ACCESS_TOKEN: ${{ secrets.WHATSAPP_ACCESS_TOKEN }}
+      WHATSAPP_PHONE_NUMBER_ID: ${{ secrets.WHATSAPP_PHONE_NUMBER_ID }}
+      RESEND_FROM_EMAIL: SERCOPREV <portal@sercoprev.cl>
+      NOTIFICATION_ADMIN_EMAILS: ${{ vars.NOTIFICATION_ADMIN_EMAILS || 'contabilidad@sercoprev.cl' }}
+      WHATSAPP_API_BASE_URL: ${{ vars.WHATSAPP_API_BASE_URL || 'https://graph.facebook.com/v23.0' }}
+      WHATSAPP_TEMPLATE_LANGUAGE: ${{ vars.WHATSAPP_TEMPLATE_LANGUAGE || 'es_CL' }}
+      WHATSAPP_DOCUMENT_REQUEST_TEMPLATE: ${{ vars.WHATSAPP_DOCUMENT_REQUEST_TEMPLATE || 'sercoprev_solicitud_documental' }}
+
+    steps:
+      - name: Validate credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          test -n "${SUPABASE_SECRET_KEY:-}"
+
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund --silent
+
+      - name: Build Cloudflare Worker
+        run: npm run build:cloudflare
+
+      - name: Prepare deployment token
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, secrets
+          from pathlib import Path
+          token = secrets.token_urlsafe(48)
+          values = {
+              'SUPABASE_SECRET_KEY': os.environ['SUPABASE_SECRET_KEY'],
+              'OFFICIAL_SYNC_TOKEN': token,
+          }
+          for name in ('RESEND_API_KEY', 'WHATSAPP_ACCESS_TOKEN', 'WHATSAPP_PHONE_NUMBER_ID'):
+              value = os.environ.get(name, '').strip()
+              if value:
+                  values[name] = value
+          secrets_path = Path('/tmp/sercoprev-cloudflare-secrets.json')
+          secrets_path.write_text(json.dumps(values))
+          secrets_path.chmod(0o600)
+          token_path = Path('/tmp/sercoprev-official-sync-token')
+          token_path.write_text(token)
+          token_path.chmod(0o600)
+          PY
+
+      - name: Deploy parser release
+        shell: bash
+        run: |
+          set -euo pipefail
+          trap 'rm -f /tmp/sercoprev-cloudflare-secrets.json' EXIT
+          npx opennextjs-cloudflare deploy -- --keep-vars --secrets-file /tmp/sercoprev-cloudflare-secrets.json
+
+      - name: Synchronize all official sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          trap 'rm -f /tmp/sercoprev-official-sync-token' EXIT
+          token=$(cat /tmp/sercoprev-official-sync-token)
+          echo "::add-mask::$token"
+          status=$(curl -sSL --max-time 120 -o /tmp/official-sync.json -w '%{http_code}' \
+            -X POST \
+            -H "x-sercoprev-sync-token: $token" \
+            -H 'user-agent: SERCOPREV-Parser-Production-Test/1.0' \
+            'https://www.sercoprev.cl/api/internal/sync-official-data' || true)
+          echo "Synchronization HTTP status: $status"
+          cat /tmp/official-sync.json
+          test "$status" = '200'
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          data = json.loads(Path('/tmp/official-sync.json').read_text())
+          assert data.get('status') == 'ok', data
+          sources = {item.get('source'): item for item in data.get('sources', [])}
+          for source in ('SII', 'PREVIRED', 'BANCO_CENTRAL'):
+              assert sources.get(source, {}).get('ok') is True, data
+          print('SII, PREVIRED and Banco Central synchronized successfully.')
+          PY
+
+      - name: Verify operational production
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 20); do
+            health_status=$(curl -sSL --max-time 30 -o /tmp/health.json -w '%{http_code}' 'https://www.sercoprev.cl/api/health' || true)
+            version_status=$(curl -sSL --max-time 30 -o /tmp/version.json -w '%{http_code}' 'https://www.sercoprev.cl/api/version' || true)
+            if [ "$health_status" = '200' ] \
+              && [ "$version_status" = '200' ] \
+              && grep -q '"status":"ok"' /tmp/health.json \
+              && grep -q '"officialDataFreshness":true' /tmp/health.json \
+              && grep -q '"closedRecordsProtectionSchema":true' /tmp/health.json \
+              && grep -q '"release":"2026-07-23-closed-record-integrity-1"' /tmp/health.json \
+              && grep -q '"release":"2026-07-23-closed-record-integrity-1"' /tmp/version.json; then
+              cat /tmp/health.json
+              cat /tmp/version.json
+              exit 0
+            fi
+            sleep 5
+          done
+          cat /tmp/health.json 2>/dev/null || true
+          cat /tmp/version.json 2>/dev/null || true
+          exit 1
