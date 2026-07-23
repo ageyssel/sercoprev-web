@@ -15,11 +15,12 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 35
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: 9021b712f9a73815e6b333a4870e0021
       SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
       RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
       WHATSAPP_ACCESS_TOKEN: ${{ secrets.WHATSAPP_ACCESS_TOKEN }}
       WHATSAPP_PHONE_NUMBER_ID: ${{ secrets.WHATSAPP_PHONE_NUMBER_ID }}
@@ -47,6 +48,11 @@ jobs:
             exit 1
           fi
 
+          if [ -z "${SUPABASE_DB_URL:-}" ]; then
+            echo '::error title=Missing Supabase database connection::Add SUPABASE_DB_URL as a repository Actions secret. Deployment stops before database or Worker changes.'
+            exit 1
+          fi
+
           echo 'Required deployment credentials are available. Their values remain masked.'
           if [ -n "${RESEND_API_KEY:-}" ]; then
             echo 'Transactional email credentials are configured.'
@@ -61,6 +67,80 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Install PostgreSQL client
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends postgresql-client
+          fi
+          psql --version
+
+      - name: Apply pending Supabase migrations
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          migrations=(
+            supabase/migrations/202607220004_recurring_tasks_notifications.sql
+            supabase/migrations/202607230005_accounting_payroll_users_documents.sql
+            supabase/migrations/202607230006_document_intake_queue.sql
+            supabase/migrations/202607230007_user_security_and_payroll_defaults.sql
+            supabase/migrations/202607230008_payroll_monthly_inputs.sql
+            supabase/migrations/202607230009_client_payroll_visibility.sql
+            supabase/migrations/202607230010_accounting_imports.sql
+          )
+
+          for migration in "${migrations[@]}"; do
+            test -f "$migration"
+          done
+
+          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          create table if not exists public.sercoprev_schema_migrations (
+            filename text primary key,
+            checksum text not null,
+            applied_at timestamptz not null default now()
+          );
+          revoke all on table public.sercoprev_schema_migrations from anon, authenticated;
+          SQL
+
+          for migration in "${migrations[@]}"; do
+            filename=$(basename "$migration")
+            checksum=$(sha256sum "$migration" | awk '{print $1}')
+            recorded=$(psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -Atqc "select checksum from public.sercoprev_schema_migrations where filename = '$filename'")
+
+            if [ -n "$recorded" ]; then
+              if [ "$recorded" != "$checksum" ]; then
+                echo "::error title=Migration checksum changed::$filename was already applied with a different checksum. Create a new migration instead of editing history."
+                exit 1
+              fi
+              echo "Skipping already applied migration: $filename"
+              continue
+            fi
+
+            echo "Applying migration: $filename"
+            psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f "$migration"
+            psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -c "insert into public.sercoprev_schema_migrations(filename, checksum) values ('$filename', '$checksum')"
+          done
+
+          missing=$(psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -Atqc "
+            select count(*)
+            from (values
+              (to_regclass('public.tarea_series')),
+              (to_regclass('public.notificaciones')),
+              (to_regclass('public.trabajadores')),
+              (to_regclass('public.novedades_remuneraciones')),
+              (to_regclass('public.plan_cuentas')),
+              (to_regclass('public.importaciones_contables')),
+              (to_regclass('public.archivos_ingesta')),
+              (to_regclass('public.usuarios_organizacion')),
+              (to_regclass('public.empresa_usuarios'))
+            ) as required_table(table_name)
+            where table_name is null;")
+          test "$missing" = '0'
+          echo 'Supabase migrations and required tables verified.'
 
       - name: Setup Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
@@ -144,7 +224,11 @@ jobs:
               && grep -qi 'SERCOPREV' /tmp/home.html \
               && grep -qi 'Ingrese a su portal' /tmp/login.html \
               && grep -q '"status":"ok"' /tmp/health.json \
-              && grep -q '"operationalSchema":true' /tmp/health.json; then
+              && grep -q '"operationalSchema":true' /tmp/health.json \
+              && grep -q '"payrollSchema":true' /tmp/health.json \
+              && grep -q '"accountingSchema":true' /tmp/health.json \
+              && grep -q '"userAccessSchema":true' /tmp/health.json \
+              && grep -q '"documentIntakeSchema":true' /tmp/health.json; then
               healthy=true
               break
             fi
