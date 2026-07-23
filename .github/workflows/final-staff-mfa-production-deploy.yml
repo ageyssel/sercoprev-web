@@ -1,0 +1,144 @@
+name: Final Staff MFA Production Deploy
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare-production
+  cancel-in-progress: true
+
+jobs:
+  deploy-and-verify:
+    if: github.head_ref == 'ops/final-staff-mfa-production-deploy'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 9021b712f9a73815e6b333a4870e0021
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      WHATSAPP_ACCESS_TOKEN: ${{ secrets.WHATSAPP_ACCESS_TOKEN }}
+      WHATSAPP_PHONE_NUMBER_ID: ${{ secrets.WHATSAPP_PHONE_NUMBER_ID }}
+      NEXT_PUBLIC_SUPABASE_URL: https://kxrxlygnhukfmdgqhoaz.supabase.co
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_LpXB0WEd-O8Y5ARxeEZ2hQ_xhw3jP1n
+      APP_BASE_URL: https://www.sercoprev.cl
+      RESEND_FROM_EMAIL: SERCOPREV <portal@sercoprev.cl>
+      NOTIFICATION_ADMIN_EMAILS: ${{ vars.NOTIFICATION_ADMIN_EMAILS || 'contabilidad@sercoprev.cl' }}
+      WHATSAPP_API_BASE_URL: ${{ vars.WHATSAPP_API_BASE_URL || 'https://graph.facebook.com/v23.0' }}
+      WHATSAPP_TEMPLATE_LANGUAGE: ${{ vars.WHATSAPP_TEMPLATE_LANGUAGE || 'es_CL' }}
+      WHATSAPP_DOCUMENT_REQUEST_TEMPLATE: ${{ vars.WHATSAPP_DOCUMENT_REQUEST_TEMPLATE || 'sercoprev_solicitud_documental' }}
+
+    steps:
+      - name: Validate production credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          test -n "${SUPABASE_SECRET_KEY:-}"
+          test -n "${RESEND_API_KEY:-}"
+
+      - name: Checkout latest main release
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund --silent
+
+      - name: Build Cloudflare Worker
+        run: npm run build:cloudflare
+
+      - name: Confirm Worker size
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --dry-run --outdir .wrangler-final-dry-run > /tmp/worker-size.log 2>&1
+          cat /tmp/worker-size.log
+          gzip_kib=$(sed -n 's/.*gzip: \([0-9.]*\) KiB.*/\1/p' /tmp/worker-size.log | tail -n 1)
+          python - "$gzip_kib" <<'PY'
+          import sys
+          size = float(sys.argv[1])
+          if size > 3000:
+              raise SystemExit(f'Worker too large for Free plan: {size:.2f} KiB')
+          print(f'Worker size accepted: {size:.2f} KiB gzip')
+          PY
+
+      - name: Prepare atomic secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, secrets
+          from pathlib import Path
+
+          values = {
+              'SUPABASE_SECRET_KEY': os.environ['SUPABASE_SECRET_KEY'],
+              'RESEND_API_KEY': os.environ['RESEND_API_KEY'],
+              'OFFICIAL_SYNC_TOKEN': secrets.token_urlsafe(48),
+          }
+          for name in ('WHATSAPP_ACCESS_TOKEN', 'WHATSAPP_PHONE_NUMBER_ID'):
+              value = os.environ.get(name, '').strip()
+              if value:
+                  values[name] = value
+          path = Path('/tmp/sercoprev-final-secrets.json')
+          path.write_text(json.dumps(values))
+          path.chmod(0o600)
+          PY
+
+      - name: Deploy latest main release atomically
+        shell: bash
+        run: |
+          set -euo pipefail
+          trap 'rm -f /tmp/sercoprev-final-secrets.json' EXIT
+          npx opennextjs-cloudflare deploy -- --keep-vars --secrets-file /tmp/sercoprev-final-secrets.json
+
+      - name: Verify production contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          healthy=false
+          for attempt in $(seq 1 40); do
+            home_status=$(curl -sSL --max-time 20 -o /tmp/home.html -w '%{http_code}' 'https://www.sercoprev.cl/' || true)
+            login_status=$(curl -sSL --max-time 20 -o /tmp/login.html -w '%{http_code}' 'https://www.sercoprev.cl/login' || true)
+            verify_status=$(curl -sS --max-time 20 -D /tmp/verify.headers -o /tmp/verify.html -w '%{http_code}' 'https://www.sercoprev.cl/login/verificar-codigo' || true)
+            health_status=$(curl -sSL --max-time 20 -o /tmp/health.json -w '%{http_code}' 'https://www.sercoprev.cl/api/health' || true)
+            version_status=$(curl -sSL --max-time 20 -o /tmp/version.json -w '%{http_code}' 'https://www.sercoprev.cl/api/version' || true)
+
+            if [ "$home_status" = '200' ] \
+              && [ "$login_status" = '200' ] \
+              && { [ "$verify_status" = '302' ] || [ "$verify_status" = '307' ] || [ "$verify_status" = '308' ]; } \
+              && [ "$health_status" = '200' ] \
+              && [ "$version_status" = '200' ] \
+              && grep -qi 'SERCOPREV' /tmp/home.html \
+              && grep -qi 'Personal interno' /tmp/login.html \
+              && grep -q '"status":"ok"' /tmp/health.json \
+              && grep -q '"release":"2026-07-23-staff-email-mfa-health-1"' /tmp/health.json \
+              && grep -q '"staffMfaSchema":true' /tmp/health.json \
+              && grep -q '"staffMfaEmailDeliveryConfigured":true' /tmp/health.json \
+              && grep -q '"documentIntakeSchema":true' /tmp/health.json \
+              && grep -q '"administrator":true' /tmp/health.json \
+              && grep -q '"documentStorage":true' /tmp/health.json \
+              && grep -q '"release":"2026-07-23-staff-email-mfa-health-1"' /tmp/version.json; then
+              healthy=true
+              break
+            fi
+            sleep 5
+          done
+
+          echo "GET / => ${home_status:-unknown}"
+          echo "GET /login => ${login_status:-unknown}"
+          echo "GET /login/verificar-codigo => ${verify_status:-unknown}"
+          echo "GET /api/health => ${health_status:-unknown}"
+          echo "GET /api/version => ${version_status:-unknown}"
+          cat /tmp/health.json 2>/dev/null || true
+          cat /tmp/version.json 2>/dev/null || true
+          cat /tmp/verify.headers 2>/dev/null || true
+          test "$healthy" = 'true'
