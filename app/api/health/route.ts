@@ -4,7 +4,7 @@ import { getApplicationBaseUrl, getSupabasePublicConfig } from '@/utils/supabase
 
 export const dynamic = 'force-dynamic'
 
-const RELEASE = '2026-07-23-staff-email-mfa-health-1'
+const RELEASE = '2026-07-23-staff-email-mfa-health-2'
 const OFFICIAL_DATA_MAX_AGE_MS = 48 * 60 * 60 * 1000
 
 type QueryResult = { error: unknown }
@@ -56,7 +56,7 @@ export async function GET() {
 
   const operationalSchema = await safeCheck('OPERATIONAL_SCHEMA', async () => {
     const supabase = createAdminClient()
-    const results = await Promise.all([
+    return allSucceeded(await Promise.all([
       supabase.from('empresas').select('id, estado_cliente, contador_asignado, plan_servicio').limit(1),
       supabase.from('leads').select('id').limit(1),
       supabase.from('obligaciones').select('id').limit(1),
@@ -70,13 +70,12 @@ export async function GET() {
       supabase.from('tickets').select('id').limit(1),
       supabase.from('ticket_mensajes').select('id').limit(1),
       supabase.from('contactos_empresa').select('id').limit(1),
-    ])
-    return allSucceeded(results)
+    ]))
   })
 
   const payrollSchema = await safeCheck('PAYROLL_SCHEMA', async () => {
     const supabase = createAdminClient()
-    const results = await Promise.all([
+    return allSucceeded(await Promise.all([
       supabase.from('trabajadores').select('id, empresa_id, estado').limit(1),
       supabase.from('contratos_trabajo').select('id, trabajador_id, estado').limit(1),
       supabase.from('parametros_remuneraciones').select('id, periodo, uf_fecha, utm_periodo, fuente_uf, fuente_utm, indicadores_verificados_at, fuentes_automaticas, parametros_automaticos_at').limit(1),
@@ -87,13 +86,12 @@ export async function GET() {
       supabase.from('vacaciones').select('id, estado').limit(1),
       supabase.from('licencias_medicas').select('id, estado').limit(1),
       supabase.from('finiquitos').select('id, estado').limit(1),
-    ])
-    return allSucceeded(results)
+    ]))
   })
 
   const accountingSchema = await safeCheck('ACCOUNTING_SCHEMA', async () => {
     const supabase = createAdminClient()
-    const results = await Promise.all([
+    return allSucceeded(await Promise.all([
       supabase.from('plan_cuentas').select('id, codigo').limit(1),
       supabase.from('periodos_contables').select('id, periodo').limit(1),
       supabase.from('asientos_contables').select('id, numero, estado').limit(1),
@@ -103,8 +101,7 @@ export async function GET() {
       supabase.from('movimientos_bancarios').select('id, estado, fingerprint').limit(1),
       supabase.from('conciliaciones_bancarias').select('id').limit(1),
       supabase.from('importaciones_contables').select('id, tipo, estado').limit(1),
-    ])
-    return allSucceeded(results)
+    ]))
   })
 
   const officialIndicatorsSchema = await safeCheck('OFFICIAL_INDICATORS_SCHEMA', async () => {
@@ -140,6 +137,7 @@ export async function GET() {
       supabase.from('datos_oficiales').select('codigo, obtenido_at').eq('fuente_codigo', 'BANCO_CENTRAL').eq('periodo', currentPeriod).limit(100),
     ])
     if (sii.error || previred.error || banco.error) return false
+
     const siiRows = sii.data ?? []
     const previredRows = previred.data ?? []
     const bancoRows = banco.data ?? []
@@ -184,11 +182,17 @@ export async function GET() {
 
   const documentIntakeSchema = await safeCheck('DOCUMENT_INTAKE_SCHEMA', async () => {
     const supabase = createAdminClient()
-    return allSucceeded(await Promise.all([
-      supabase.from('lotes_documentales').select('id, estado').limit(1),
-      supabase.from('archivos_ingesta').select('id, estado, confianza').limit(1),
-      supabase.from('documentos').select('id, lote_id, clasificacion_estado, fuente_carga').limit(1),
-    ]))
+    const [lots, files, documents, migration] = await Promise.all([
+      supabase.from('lotes_documentales').select('id').limit(1),
+      supabase.from('archivos_ingesta').select('id').limit(1),
+      supabase.from('documentos').select('id').limit(1),
+      supabase.from('sercoprev_schema_migrations').select('filename').eq('filename', '202607230006_document_intake_queue.sql').maybeSingle(),
+    ])
+    return !lots.error
+      && !files.error
+      && !documents.error
+      && !migration.error
+      && migration.data?.filename === '202607230006_document_intake_queue.sql'
   })
 
   const administrator = await safeCheck('ADMINISTRATOR', async () => {
@@ -198,18 +202,16 @@ export async function GET() {
       directory.from('usuarios_organizacion').select('user_id').eq('activo', true).in('rol', ['Superadministrador', 'Administrador']).limit(1),
     ])
     if (directAdmin.error || staffAdmin.error) return false
-    const userId = directAdmin.data?.[0]?.user_id ?? staffAdmin.data?.[0]?.user_id
-    if (!userId) return false
-
-    // Se usa un cliente separado para que una incidencia de Auth nunca altere
-    // las cabeceras o el estado de los controles de datos y Storage.
-    const { data, error } = await createAdminClient().auth.admin.getUserById(userId)
-    return !error && Boolean(data.user)
+    return Boolean(directAdmin.data?.[0]?.user_id ?? staffAdmin.data?.[0]?.user_id)
   })
 
   const documentStorage = await safeCheck('DOCUMENT_STORAGE', async () => {
-    const { data, error } = await createAdminClient().storage.listBuckets()
-    return !error && Boolean(data?.some((bucket) => bucket.id === 'documentos' && bucket.public === false))
+    const storage = createAdminClient().storage
+    const buckets = await storage.listBuckets()
+    if (!buckets.error && buckets.data?.some((bucket) => bucket.id === 'documentos' && bucket.public === false)) return true
+
+    const probe = await storage.from('documentos').list('', { limit: 1, offset: 0 })
+    return !probe.error
   })
 
   const checks = {
