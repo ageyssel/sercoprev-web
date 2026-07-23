@@ -12,6 +12,20 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3
 const STAFF_ROLES: StaffRole[] = ['Superadministrador', 'Administrador', 'Contador', 'Remuneraciones', 'Cobranza', 'Lectura']
 const CLIENT_ROLES: ClientRole[] = ['Administrador cliente', 'Operador', 'Solo lectura']
 
+type CompanyRelation =
+  | { razon_social: string; nombre_fantasia: string | null }
+  | Array<{ razon_social: string; nombre_fantasia: string | null }>
+  | null
+
+type ResetProfile = {
+  userId: string
+  name: string
+  email: string
+  role: string
+  companyId: string | null
+  companyName: string | null
+}
+
 function clean(value: unknown, maxLength: number) {
   return typeof value === 'string' ? value.trim().replace(/\s+/g, ' ').slice(0, maxLength) : ''
 }
@@ -21,6 +35,11 @@ function temporaryPassword() {
   const bytes = crypto.getRandomValues(new Uint8Array(18))
   const generated = Array.from(bytes, (byte) => alphabet[byte % alphabet.length]).join('')
   return `S!${generated}9a`
+}
+
+function companyName(relation: CompanyRelation) {
+  const company = Array.isArray(relation) ? relation[0] : relation
+  return company?.nombre_fantasia || company?.razon_social || null
 }
 
 async function logInvitation(
@@ -138,11 +157,11 @@ export async function crearUsuarioCliente(
       throw membershipError
     }
 
-    const companyName = company.nombre_fantasia || company.razon_social
+    const companyDisplayName = company.nombre_fantasia || company.razon_social
     let emailSent = false
     let emailError: string | null = null
     try {
-      const result = await sendInvitationEmail({ email, name: nombre, role: rol, temporaryPassword: password, destination: 'client', companyName })
+      const result = await sendInvitationEmail({ email, name: nombre, role: rol, temporaryPassword: password, destination: 'client', companyName: companyDisplayName })
       emailSent = result.sent
       emailError = result.reason
     } catch (error) {
@@ -168,15 +187,85 @@ export async function cambiarEstadoUsuario(formData: FormData) {
   const activo = clean(formData.get('activo'), 10) === 'true'
   if (!UUID_PATTERN.test(id) || !['equipo', 'cliente'].includes(tipo)) throw new Error('INVALID_USER')
 
-  const table = tipo === 'equipo' ? 'usuarios_organizacion' : 'empresa_usuarios'
-  const { data: profile, error: profileError } = await adminClient.from(table).select('user_id, rol, empresa_id').eq('id', id).single()
-  if (profileError || !profile) throw new Error('USER_NOT_FOUND')
-  if (tipo === 'equipo' && profile.rol === 'Superadministrador' && actorRole !== 'Superadministrador') throw new Error('FORBIDDEN_ROLE')
+  if (tipo === 'equipo') {
+    const { data: profile, error: profileError } = await adminClient
+      .from('usuarios_organizacion')
+      .select('user_id, rol')
+      .eq('id', id)
+      .single()
+    if (profileError || !profile) throw new Error('USER_NOT_FOUND')
+    if (profile.rol === 'Superadministrador' && actorRole !== 'Superadministrador') throw new Error('FORBIDDEN_ROLE')
 
-  const { error } = await adminClient.from(table).update({ activo }).eq('id', id)
-  if (error) throw error
-  await adminClient.from('auditoria_eventos').insert({ actor_user_id: actorUserId, empresa_id: profile.empresa_id ?? null, accion: activo ? 'activar' : 'desactivar', entidad: tipo === 'equipo' ? 'usuario_organizacion' : 'empresa_usuario', entidad_id: id, metadata: { rol: profile.rol } })
+    const { error } = await adminClient.from('usuarios_organizacion').update({ activo }).eq('id', id)
+    if (error) throw error
+    await adminClient.from('auditoria_eventos').insert({
+      actor_user_id: actorUserId,
+      empresa_id: null,
+      accion: activo ? 'activar' : 'desactivar',
+      entidad: 'usuario_organizacion',
+      entidad_id: id,
+      metadata: { rol: profile.rol },
+    })
+  } else {
+    const { data: profile, error: profileError } = await adminClient
+      .from('empresa_usuarios')
+      .select('user_id, rol, empresa_id')
+      .eq('id', id)
+      .single()
+    if (profileError || !profile) throw new Error('USER_NOT_FOUND')
+
+    const { error } = await adminClient.from('empresa_usuarios').update({ activo }).eq('id', id)
+    if (error) throw error
+    await adminClient.from('auditoria_eventos').insert({
+      actor_user_id: actorUserId,
+      empresa_id: profile.empresa_id,
+      accion: activo ? 'activar' : 'desactivar',
+      entidad: 'empresa_usuario',
+      entidad_id: id,
+      metadata: { rol: profile.rol },
+    })
+  }
+
   revalidatePath('/admin/usuarios')
+}
+
+async function loadResetProfile(
+  adminClient: Awaited<ReturnType<typeof requireAdmin>>['adminClient'],
+  id: string,
+  tipo: string,
+): Promise<ResetProfile> {
+  if (tipo === 'equipo') {
+    const { data, error } = await adminClient
+      .from('usuarios_organizacion')
+      .select('user_id, nombre, email, rol')
+      .eq('id', id)
+      .single()
+    if (error || !data) throw new Error('USER_NOT_FOUND')
+    return {
+      userId: data.user_id,
+      name: data.nombre,
+      email: data.email,
+      role: data.rol,
+      companyId: null,
+      companyName: null,
+    }
+  }
+
+  const { data, error } = await adminClient
+    .from('empresa_usuarios')
+    .select('user_id, nombre, email, rol, empresa_id, empresa:empresas(razon_social, nombre_fantasia)')
+    .eq('id', id)
+    .single()
+  if (error || !data) throw new Error('USER_NOT_FOUND')
+
+  return {
+    userId: data.user_id,
+    name: data.nombre,
+    email: data.email,
+    role: data.rol,
+    companyId: data.empresa_id,
+    companyName: companyName(data.empresa as unknown as CompanyRelation),
+  }
 }
 
 export async function restablecerAccesoUsuario(formData: FormData) {
@@ -185,36 +274,48 @@ export async function restablecerAccesoUsuario(formData: FormData) {
   const tipo = clean(formData.get('tipo'), 20)
   if (!UUID_PATTERN.test(id) || !['equipo', 'cliente'].includes(tipo)) throw new Error('INVALID_USER')
 
-  const table = tipo === 'equipo' ? 'usuarios_organizacion' : 'empresa_usuarios'
-  const select = tipo === 'equipo' ? 'user_id, nombre, email, rol' : 'user_id, nombre, email, rol, empresa_id, empresa:empresas(razon_social, nombre_fantasia)'
-  const { data: profile, error: profileError } = await adminClient.from(table).select(select).eq('id', id).single()
-  if (profileError || !profile) throw new Error('USER_NOT_FOUND')
-
+  const profile = await loadResetProfile(adminClient, id, tipo)
   const password = temporaryPassword()
-  const { error: passwordError } = await adminClient.auth.admin.updateUserById(profile.user_id, { password })
+  const { error: passwordError } = await adminClient.auth.admin.updateUserById(profile.userId, { password })
   if (passwordError) throw passwordError
-  await adminClient.from(table).update({ must_change_password: true, activo: true }).eq('id', id)
 
-  const relation = 'empresa' in profile ? profile.empresa as unknown as { razon_social: string; nombre_fantasia: string | null } | Array<{ razon_social: string; nombre_fantasia: string | null }> | null : null
-  const company = Array.isArray(relation) ? relation[0] : relation
+  const updateResult = tipo === 'equipo'
+    ? await adminClient.from('usuarios_organizacion').update({ must_change_password: true, activo: true }).eq('id', id)
+    : await adminClient.from('empresa_usuarios').update({ must_change_password: true, activo: true }).eq('id', id)
+  if (updateResult.error) throw updateResult.error
+
   let emailSent = false
   let emailError: string | null = null
   try {
     const result = await sendInvitationEmail({
       email: profile.email,
-      name: profile.nombre,
-      role: profile.rol,
+      name: profile.name,
+      role: profile.role,
       temporaryPassword: password,
       destination: tipo === 'equipo' ? 'admin' : 'client',
-      companyName: company?.nombre_fantasia || company?.razon_social || null,
+      companyName: profile.companyName,
     })
     emailSent = result.sent
     emailError = result.reason
   } catch (error) {
     emailError = error instanceof Error ? error.message : 'Error desconocido'
   }
-  await logInvitation(adminClient, { empresaId: 'empresa_id' in profile ? profile.empresa_id : null, email: profile.email, event: 'usuario_acceso_restablecido', sent: emailSent, error: emailError })
-  await adminClient.from('auditoria_eventos').insert({ actor_user_id: actorUserId, empresa_id: 'empresa_id' in profile ? profile.empresa_id : null, accion: 'restablecer_acceso', entidad: tipo === 'equipo' ? 'usuario_organizacion' : 'empresa_usuario', entidad_id: id, metadata: { email_enviado: emailSent } })
+
+  await logInvitation(adminClient, {
+    empresaId: profile.companyId,
+    email: profile.email,
+    event: 'usuario_acceso_restablecido',
+    sent: emailSent,
+    error: emailError,
+  })
+  await adminClient.from('auditoria_eventos').insert({
+    actor_user_id: actorUserId,
+    empresa_id: profile.companyId,
+    accion: 'restablecer_acceso',
+    entidad: tipo === 'equipo' ? 'usuario_organizacion' : 'empresa_usuario',
+    entidad_id: id,
+    metadata: { email_enviado: emailSent },
+  })
   revalidatePath('/admin/usuarios')
   revalidatePath('/admin/notificaciones')
 }
