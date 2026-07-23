@@ -11,6 +11,7 @@ export async function GET() {
   let operationalSchema = false
   let payrollSchema = false
   let accountingSchema = false
+  let officialIndicatorsSchema = false
   let userAccessSchema = false
   let documentIntakeSchema = false
   let administrator = false
@@ -60,7 +61,7 @@ export async function GET() {
     const payrollChecks = await Promise.all([
       supabase.from('trabajadores').select('id, empresa_id, estado').limit(1),
       supabase.from('contratos_trabajo').select('id, trabajador_id, estado').limit(1),
-      supabase.from('parametros_remuneraciones').select('id, periodo').limit(1),
+      supabase.from('parametros_remuneraciones').select('id, periodo, uf_fecha, utm_periodo, fuente_uf, fuente_utm, indicadores_verificados_at').limit(1),
       supabase.from('periodos_remuneraciones').select('id, periodo, estado').limit(1),
       supabase.from('conceptos_remuneracion').select('id, codigo').limit(1),
       supabase.from('novedades_remuneraciones').select('id, periodo_id, trabajador_id').limit(1),
@@ -70,6 +71,12 @@ export async function GET() {
       supabase.from('finiquitos').select('id, estado').limit(1),
     ])
     payrollSchema = payrollChecks.every((result) => !result.error)
+
+    const indicatorChecks = await Promise.all([
+      supabase.from('indicadores_oficiales').select('id, tipo, fecha_referencia, valor, fuente_url, obtenido_at').limit(1),
+      supabase.from('parametros_remuneraciones').select('id, uf_fecha, utm_periodo, fuente_uf, fuente_utm, indicadores_verificados_at').limit(1),
+    ])
+    officialIndicatorsSchema = indicatorChecks.every((result) => !result.error)
 
     const accountingChecks = await Promise.all([
       supabase.from('plan_cuentas').select('id, codigo').limit(1),
@@ -104,6 +111,7 @@ export async function GET() {
     operationalSchema = false
     payrollSchema = false
     accountingSchema = false
+    officialIndicatorsSchema = false
     userAccessSchema = false
     documentIntakeSchema = false
     administrator = false
@@ -117,6 +125,7 @@ export async function GET() {
     operationalSchema,
     payrollSchema,
     accountingSchema,
+    officialIndicatorsSchema,
     userAccessSchema,
     documentIntakeSchema,
     administrator,

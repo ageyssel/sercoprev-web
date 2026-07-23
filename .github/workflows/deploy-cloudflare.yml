@@ -38,43 +38,21 @@ jobs:
       WHATSAPP_API_BASE_URL: ${{ vars.WHATSAPP_API_BASE_URL || 'https://graph.facebook.com/v23.0' }}
       WHATSAPP_TEMPLATE_LANGUAGE: ${{ vars.WHATSAPP_TEMPLATE_LANGUAGE || 'es_CL' }}
       WHATSAPP_DOCUMENT_REQUEST_TEMPLATE: ${{ vars.WHATSAPP_DOCUMENT_REQUEST_TEMPLATE || 'sercoprev_solicitud_documental' }}
+
     steps:
       - name: Validate deployment credentials
         shell: bash
         run: |
           set -euo pipefail
-
-          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
-            echo '::error title=Missing Cloudflare credential::Add CLOUDFLARE_API_TOKEN as a repository Actions secret.'
+          test -n "${CLOUDFLARE_API_TOKEN:-}" || { echo '::error title=Missing Cloudflare credential::Add CLOUDFLARE_API_TOKEN.'; exit 1; }
+          test -n "${SUPABASE_SECRET_KEY:-}" || { echo '::error title=Missing Supabase credential::Add SUPABASE_SECRET_KEY.'; exit 1; }
+          if [ -z "${SUPABASE_DB_URL_SECRET:-}${SUPABASE_DATABASE_URL_SECRET:-}${DATABASE_URL_SECRET:-}${POSTGRES_URL_SECRET:-}${SUPABASE_DB_PASSWORD_SECRET:-}${SUPABASE_DATABASE_PASSWORD_SECRET:-}${POSTGRES_PASSWORD_SECRET:-}" ]; then
+            echo '::error title=Missing Supabase database connection::Add a PostgreSQL URI or database password secret.'
             exit 1
           fi
-
-          if [ -z "${SUPABASE_SECRET_KEY:-}" ]; then
-            echo '::error title=Missing Supabase credential::Add SUPABASE_SECRET_KEY as a repository Actions secret.'
-            exit 1
-          fi
-
-          if [ -z "${SUPABASE_DB_URL_SECRET:-}" ] \
-            && [ -z "${SUPABASE_DATABASE_URL_SECRET:-}" ] \
-            && [ -z "${DATABASE_URL_SECRET:-}" ] \
-            && [ -z "${POSTGRES_URL_SECRET:-}" ] \
-            && [ -z "${SUPABASE_DB_PASSWORD_SECRET:-}" ] \
-            && [ -z "${SUPABASE_DATABASE_PASSWORD_SECRET:-}" ] \
-            && [ -z "${POSTGRES_PASSWORD_SECRET:-}" ]; then
-            echo '::error title=Missing Supabase database connection::Add SUPABASE_DB_URL, DATABASE_URL, POSTGRES_URL or a Supabase database password secret. Deployment stops before database or Worker changes.'
-            exit 1
-          fi
-
-          echo 'Required deployment credentials are available. Their values remain masked.'
-          if [ -n "${RESEND_API_KEY:-}" ]; then
-            echo 'Transactional email credentials are configured.'
-          else
-            echo '::warning title=Email notifications disabled::RESEND_API_KEY is not configured; platform operations will continue and omitted notifications will be logged.'
-          fi
-          if [ -n "${WHATSAPP_ACCESS_TOKEN:-}" ] && [ -n "${WHATSAPP_PHONE_NUMBER_ID:-}" ]; then
-            echo 'WhatsApp notification credentials are configured.'
-          else
-            echo '::warning title=WhatsApp notifications disabled::Configure WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID to activate document-request messages.'
+          [ -n "${RESEND_API_KEY:-}" ] || echo '::warning title=Email notifications disabled::RESEND_API_KEY is not configured.'
+          if [ -z "${WHATSAPP_ACCESS_TOKEN:-}" ] || [ -z "${WHATSAPP_PHONE_NUMBER_ID:-}" ]; then
+            echo '::warning title=WhatsApp notifications disabled::WhatsApp remains optional and does not block deployment.'
           fi
 
       - name: Checkout
@@ -94,81 +72,45 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
-          direct_url=''
-          for candidate in \
-            "${SUPABASE_DB_URL_SECRET:-}" \
-            "${SUPABASE_DATABASE_URL_SECRET:-}" \
-            "${DATABASE_URL_SECRET:-}" \
-            "${POSTGRES_URL_SECRET:-}"; do
-            if [ -n "$candidate" ]; then
-              direct_url=$(RAW_URL="$candidate" python - <<'PY'
+          raw=''
+          for value in "${SUPABASE_DB_URL_SECRET:-}" "${SUPABASE_DATABASE_URL_SECRET:-}" "${DATABASE_URL_SECRET:-}" "${POSTGRES_URL_SECRET:-}"; do
+            if [ -n "$value" ]; then raw="$value"; break; fi
+          done
+          raw=$(RAW="$raw" python - <<'PY'
           import os
-          value = os.environ['RAW_URL'].strip()
+          value = os.environ.get('RAW', '').strip()
           if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
               value = value[1:-1].strip()
           print(value, end='')
           PY
-              )
-              break
-            fi
-          done
+          )
 
           password=''
-          for candidate in \
-            "${SUPABASE_DB_PASSWORD_SECRET:-}" \
-            "${SUPABASE_DATABASE_PASSWORD_SECRET:-}" \
-            "${POSTGRES_PASSWORD_SECRET:-}"; do
-            if [ -n "$candidate" ]; then
-              password="$candidate"
-              break
-            fi
+          for value in "${SUPABASE_DB_PASSWORD_SECRET:-}" "${SUPABASE_DATABASE_PASSWORD_SECRET:-}" "${POSTGRES_PASSWORD_SECRET:-}"; do
+            if [ -n "$value" ]; then password="$value"; break; fi
           done
 
-          if [ -n "$direct_url" ] \
-            && [[ "$direct_url" != postgresql://* ]] \
-            && [[ "$direct_url" != postgres://* ]]; then
-            if [ -z "$password" ]; then
-              password="$direct_url"
-            fi
-            direct_url=''
-            echo 'SUPABASE_DB_URL contains a database password; resolving the compatible Session Pooler automatically.'
-          fi
-
-          if [ -n "$direct_url" ]; then
-            echo "::add-mask::$direct_url"
-            if psql "$direct_url" -v ON_ERROR_STOP=1 -Atqc 'select 1' >/dev/null 2>&1; then
-              echo "SUPABASE_DB_URL=$direct_url" >> "$GITHUB_ENV"
-              echo 'Supabase database connection resolved from the configured URL.'
+          if [[ "$raw" == postgresql://* || "$raw" == postgres://* ]]; then
+            echo "::add-mask::$raw"
+            if psql "$raw" -v ON_ERROR_STOP=1 -Atqc 'select 1' >/dev/null 2>&1; then
+              echo "SUPABASE_DB_URL=$raw" >> "$GITHUB_ENV"
               exit 0
             fi
-
-            extracted_password=$(DIRECT_URL="$direct_url" python - <<'PY'
+            extracted=$(RAW="$raw" python - <<'PY'
           import os
           from urllib.parse import unquote, urlparse
-          try:
-              parsed = urlparse(os.environ['DIRECT_URL'])
-              value = unquote(parsed.password or '')
-              if value.upper() in {'YOUR-PASSWORD', '[YOUR-PASSWORD]', 'PASSWORD', '[PASSWORD]'}:
-                  value = ''
-              print(value, end='')
-          except Exception:
-              pass
+          value = unquote(urlparse(os.environ['RAW']).password or '')
+          print('' if value.upper() in {'YOUR-PASSWORD', '[YOUR-PASSWORD]', 'PASSWORD', '[PASSWORD]'} else value, end='')
           PY
             )
-            if [ -n "$extracted_password" ]; then
-              password="$extracted_password"
-            fi
-            echo 'Configured URL was not directly reachable; trying Supabase pooler endpoints.'
+            [ -z "$password" ] && password="$extracted"
+          elif [ -n "$raw" ] && [ -z "$password" ]; then
+            password="$raw"
           fi
 
-          if [ -z "$password" ]; then
-            echo '::error title=Supabase database connection failed::The configured URL did not connect and no usable database password could be extracted. Replace SUPABASE_DB_URL with the complete Session Pooler URI from Supabase.'
-            exit 1
-          fi
-
+          test -n "$password" || { echo '::error title=Invalid Supabase connection::No usable database password was found.'; exit 1; }
           echo "::add-mask::$password"
-          encoded_password=$(PASSWORD="$password" python - <<'PY'
+          encoded=$(PASSWORD="$password" python - <<'PY'
           import os
           from urllib.parse import quote
           print(quote(os.environ['PASSWORD'], safe=''), end='')
@@ -176,45 +118,27 @@ jobs:
           )
 
           project_ref='kxrxlygnhukfmdgqhoaz'
-          regions=(
-            sa-east-1
-            us-east-1
-            us-east-2
-            us-west-1
-            us-west-2
-            ca-central-1
-            eu-west-1
-            eu-west-2
-            eu-central-1
-            ap-south-1
-            ap-southeast-1
-            ap-southeast-2
-            ap-northeast-1
-            ap-northeast-2
-          )
-
+          regions=(sa-east-1 us-east-1 us-east-2 us-west-1 us-west-2 ca-central-1 eu-west-1 eu-west-2 eu-central-1 ap-south-1 ap-southeast-1 ap-southeast-2 ap-northeast-1 ap-northeast-2)
           for region in "${regions[@]}"; do
             for cluster in 0 1 2; do
               for port in 5432 6543; do
-                candidate="postgresql://postgres.${project_ref}:${encoded_password}@aws-${cluster}-${region}.pooler.supabase.com:${port}/postgres?sslmode=require&connect_timeout=6"
+                candidate="postgresql://postgres.${project_ref}:${encoded}@aws-${cluster}-${region}.pooler.supabase.com:${port}/postgres?sslmode=require&connect_timeout=6"
                 echo "::add-mask::$candidate"
                 if psql "$candidate" -v ON_ERROR_STOP=1 -Atqc 'select 1' >/dev/null 2>&1; then
                   echo "SUPABASE_DB_URL=$candidate" >> "$GITHUB_ENV"
-                  echo "Supabase pooler resolved for region $region on port $port."
+                  echo "Supabase pooler resolved for ${region}:${port}."
                   exit 0
                 fi
               done
             done
           done
-
-          echo '::error title=Supabase database connection failed::The configured database password was rejected by the supported pooler endpoints. Confirm that SUPABASE_DB_URL contains the current database password or replace it with the exact Session Pooler URI shown in Supabase Connect.'
+          echo '::error title=Supabase connection failed::No compatible Session Pooler accepted the configured credential.'
           exit 1
 
       - name: Apply pending Supabase migrations
         shell: bash
         run: |
           set -euo pipefail
-
           migrations=(
             supabase/migrations/202607220004_recurring_tasks_notifications.sql
             supabase/migrations/202607230005_accounting_payroll_users_documents.sql
@@ -223,11 +147,9 @@ jobs:
             supabase/migrations/202607230008_payroll_monthly_inputs.sql
             supabase/migrations/202607230009_client_payroll_visibility.sql
             supabase/migrations/202607230010_accounting_imports.sql
+            supabase/migrations/202607230011_official_indicators_and_parameter_trace.sql
           )
-
-          for migration in "${migrations[@]}"; do
-            test -f "$migration"
-          done
+          for migration in "${migrations[@]}"; do test -f "$migration"; done
 
           psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 <<'SQL'
           create table if not exists public.sercoprev_schema_migrations (
@@ -242,24 +164,18 @@ jobs:
             filename=$(basename "$migration")
             checksum=$(sha256sum "$migration" | awk '{print $1}')
             recorded=$(psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -Atqc "select checksum from public.sercoprev_schema_migrations where filename = '$filename'")
-
             if [ -n "$recorded" ]; then
-              if [ "$recorded" != "$checksum" ]; then
-                echo "::error title=Migration checksum changed::$filename was already applied with a different checksum. Create a new migration instead of editing history."
-                exit 1
-              fi
+              test "$recorded" = "$checksum" || { echo "::error title=Migration checksum changed::$filename differs from the applied migration."; exit 1; }
               echo "Skipping already applied migration: $filename"
               continue
             fi
-
             echo "Applying migration: $filename"
             psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f "$migration"
             psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -c "insert into public.sercoprev_schema_migrations(filename, checksum) values ('$filename', '$checksum')"
           done
 
-          missing=$(psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -Atqc "
-            select count(*)
-            from (values
+          missing_tables=$(psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -Atqc "
+            select count(*) from (values
               (to_regclass('public.tarea_series')),
               (to_regclass('public.notificaciones')),
               (to_regclass('public.trabajadores')),
@@ -268,11 +184,19 @@ jobs:
               (to_regclass('public.importaciones_contables')),
               (to_regclass('public.archivos_ingesta')),
               (to_regclass('public.usuarios_organizacion')),
-              (to_regclass('public.empresa_usuarios'))
-            ) as required_table(table_name)
-            where table_name is null;")
-          test "$missing" = '0'
-          echo 'Supabase migrations and required tables verified.'
+              (to_regclass('public.empresa_usuarios')),
+              (to_regclass('public.indicadores_oficiales'))
+            ) as required(table_name) where table_name is null;")
+          test "$missing_tables" = '0'
+
+          missing_columns=$(psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -Atqc "
+            select count(*) from (values ('uf_fecha'), ('utm_periodo'), ('fuente_uf'), ('fuente_utm'), ('indicadores_verificados_at')) as required(column_name)
+            where not exists (
+              select 1 from information_schema.columns
+              where table_schema = 'public' and table_name = 'parametros_remuneraciones' and columns.column_name = required.column_name
+            );")
+          test "$missing_columns" = '0'
+          echo 'Supabase migrations, indicator table and trace columns verified.'
 
       - name: Setup Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
@@ -295,7 +219,6 @@ jobs:
           gzip_kib=$(sed -n 's/.*gzip: \([0-9.]*\) KiB.*/\1/p' /tmp/worker-size.log | tail -n 1)
           python - "$gzip_kib" <<'PY'
           import sys
-
           size = float(sys.argv[1])
           if size > 3000:
               raise SystemExit(f'Worker too large for Free plan: {size:.2f} KiB')
@@ -307,18 +230,13 @@ jobs:
         run: |
           set -euo pipefail
           python - <<'PY'
-          import json
-          import os
+          import json, os
           from pathlib import Path
-
-          values = {
-              'SUPABASE_SECRET_KEY': os.environ['SUPABASE_SECRET_KEY'],
-          }
-          for optional_name in ('RESEND_API_KEY', 'WHATSAPP_ACCESS_TOKEN', 'WHATSAPP_PHONE_NUMBER_ID'):
-              optional_value = os.environ.get(optional_name, '').strip()
-              if optional_value:
-                  values[optional_name] = optional_value
-
+          values = {'SUPABASE_SECRET_KEY': os.environ['SUPABASE_SECRET_KEY']}
+          for name in ('RESEND_API_KEY', 'WHATSAPP_ACCESS_TOKEN', 'WHATSAPP_PHONE_NUMBER_ID'):
+              value = os.environ.get(name, '').strip()
+              if value:
+                  values[name] = value
           path = Path('/tmp/sercoprev-cloudflare-secrets.json')
           path.write_text(json.dumps(values))
           path.chmod(0o600)
@@ -329,27 +247,17 @@ jobs:
         run: |
           set -euo pipefail
           trap 'rm -f /tmp/sercoprev-cloudflare-secrets.json' EXIT
-          npx opennextjs-cloudflare deploy -- \
-            --keep-vars \
-            --secrets-file /tmp/sercoprev-cloudflare-secrets.json
+          npx opennextjs-cloudflare deploy -- --keep-vars --secrets-file /tmp/sercoprev-cloudflare-secrets.json
 
       - name: Verify production
         shell: bash
         run: |
           set -euo pipefail
           healthy=false
-
           for attempt in $(seq 1 40); do
-            home_status=$(curl --silent --show-error --location --max-time 20 \
-              --output /tmp/home.html --write-out '%{http_code}' \
-              'https://www.sercoprev.cl/' || true)
-            login_status=$(curl --silent --show-error --location --max-time 20 \
-              --output /tmp/login.html --write-out '%{http_code}' \
-              'https://www.sercoprev.cl/login' || true)
-            health_status=$(curl --silent --show-error --location --max-time 20 \
-              --output /tmp/health.json --write-out '%{http_code}' \
-              'https://www.sercoprev.cl/api/health' || true)
-
+            home_status=$(curl -sSL --max-time 20 -o /tmp/home.html -w '%{http_code}' 'https://www.sercoprev.cl/' || true)
+            login_status=$(curl -sSL --max-time 20 -o /tmp/login.html -w '%{http_code}' 'https://www.sercoprev.cl/login' || true)
+            health_status=$(curl -sSL --max-time 20 -o /tmp/health.json -w '%{http_code}' 'https://www.sercoprev.cl/api/health' || true)
             if [ "$home_status" = '200' ] \
               && [ "$login_status" = '200' ] \
               && [ "$health_status" = '200' ] \
@@ -359,15 +267,14 @@ jobs:
               && grep -q '"operationalSchema":true' /tmp/health.json \
               && grep -q '"payrollSchema":true' /tmp/health.json \
               && grep -q '"accountingSchema":true' /tmp/health.json \
+              && grep -q '"officialIndicatorsSchema":true' /tmp/health.json \
               && grep -q '"userAccessSchema":true' /tmp/health.json \
               && grep -q '"documentIntakeSchema":true' /tmp/health.json; then
               healthy=true
               break
             fi
-
             sleep 5
           done
-
           echo "GET / => ${home_status:-unknown}"
           echo "GET /login => ${login_status:-unknown}"
           echo "GET /api/health => ${health_status:-unknown}"
