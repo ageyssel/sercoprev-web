@@ -1,4 +1,10 @@
+import { CompanySearchSelector } from '@/components/admin/CompanySelector'
+import type { CompanySelectorOption } from '@/components/admin/CompanySelector'
 import { InfoTip } from '@/components/ui/InfoTip'
+
+export function CompanySelector({ companies, selectedId }: { companies: CompanySelectorOption[]; selectedId?: string | null }) {
+  return <CompanySearchSelector key={selectedId ?? 'sin-empresa'} companies={companies} selectedId={selectedId} />
+}
 
 export function ModulePageHeader({ eyebrow, title, description, help, actions }: { eyebrow: string; title: string; description: string; help?: React.ReactNode; actions?: React.ReactNode }) {
   return (
@@ -10,16 +16,5 @@ export function ModulePageHeader({ eyebrow, title, description, help, actions }:
       </div>
       {actions}
     </header>
-  )
-}
-
-export function CompanySelector({ companies, selectedId }: { companies: Array<{ id: string; razon_social: string; nombre_fantasia: string | null }>; selectedId?: string | null }) {
-  return (
-    <form method="get" className="flex gap-2">
-      <select name="empresa" defaultValue={selectedId ?? ''} className="h-11 min-w-[280px] rounded-xl border border-slate-300 bg-white px-3 text-sm font-bold">
-        {companies.map((company) => <option key={company.id} value={company.id}>{company.nombre_fantasia || company.razon_social}</option>)}
-      </select>
-      <button className="h-11 rounded-xl bg-[#0f2438] px-5 text-sm font-black text-white">Abrir</button>
-    </form>
   )
 }
