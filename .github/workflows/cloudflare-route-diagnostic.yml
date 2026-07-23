@@ -16,67 +16,8 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: 9021b712f9a73815e6b333a4870e0021
     steps:
+      - name: Checkout diagnostic
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
       - name: Inspect active Worker and routes
-        shell: bash
-        run: |
-          set -euo pipefail
-          api='https://api.cloudflare.com/client/v4'
-          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
-
-          curl -sS --max-time 30 "${auth[@]}" \
-            "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/sercoprev-web/deployments" \
-            -o /tmp/deployments.json
-          curl -sS --max-time 30 "${auth[@]}" \
-            "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain" \
-            -o /tmp/subdomain.json
-          curl -sS --max-time 30 "${auth[@]}" \
-            "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/domains" \
-            -o /tmp/domains.json
-
-          echo 'DEPLOYMENTS_BEGIN'
-          jq -c '
-            def deployments:
-              if (.result|type) == "array" then .result
-              elif (.result.deployments?|type) == "array" then .result.deployments
-              else [] end;
-            {success, errors, deployments: [deployments[]? |
-              if type == "array" then
-                {tuple_length:length, values:[.[] | if type == "object" then {id:(.id // .version_id // null), created_on:(.created_on // null), percentage:(.percentage // null)} else . end]}
-              else
-                {id:(.id // null), created_on:(.created_on // null), source:(.source // null), strategy:(.strategy // null), versions:[(.versions // [])[]? | {version_id:(.version_id // .id // null), percentage:(.percentage // null)}]}
-              end
-            ]}' /tmp/deployments.json || jq -c '{success, errors, result_type:(.result|type)}' /tmp/deployments.json
-          echo 'DEPLOYMENTS_END'
-
-          subdomain=$(jq -r '.result.subdomain // empty' /tmp/subdomain.json)
-          echo "workers_subdomain=$subdomain"
-          echo 'DOMAINS_BEGIN'
-          jq -c '{success, errors, domains: [(.result // [])[]? | {id:(.id // null), hostname:(.hostname // null), service:(.service // null), environment:(.environment // null), zone_id:(.zone_id // null)}]}' /tmp/domains.json
-          echo 'DOMAINS_END'
-
-          if [ -n "$subdomain" ]; then
-            workers_url="https://sercoprev-web.$subdomain.workers.dev"
-            workers_health_status=$(curl -sS --max-time 30 -o /tmp/workers-health.json -w '%{http_code}' "$workers_url/api/health" || true)
-            workers_version_status=$(curl -sS --max-time 30 -o /tmp/workers-version.json -w '%{http_code}' "$workers_url/api/version" || true)
-            echo "workers_health_status=$workers_health_status workers_version_status=$workers_version_status"
-            echo 'WORKERS_HEALTH_BEGIN'
-            cat /tmp/workers-health.json 2>/dev/null || true
-            echo
-            echo 'WORKERS_HEALTH_END'
-            echo 'WORKERS_VERSION_BEGIN'
-            cat /tmp/workers-version.json 2>/dev/null || true
-            echo
-            echo 'WORKERS_VERSION_END'
-          fi
-
-          public_health_status=$(curl -sS --max-time 30 -o /tmp/public-health.json -w '%{http_code}' 'https://www.sercoprev.cl/api/health' || true)
-          public_version_status=$(curl -sS --max-time 30 -o /tmp/public-version.json -w '%{http_code}' 'https://www.sercoprev.cl/api/version' || true)
-          echo "public_health_status=$public_health_status public_version_status=$public_version_status"
-          echo 'PUBLIC_HEALTH_BEGIN'
-          cat /tmp/public-health.json 2>/dev/null || true
-          echo
-          echo 'PUBLIC_HEALTH_END'
-          echo 'PUBLIC_VERSION_BEGIN'
-          cat /tmp/public-version.json 2>/dev/null || true
-          echo
-          echo 'PUBLIC_VERSION_END'
+        run: bash scripts/cloudflare-route-diagnostic.sh
