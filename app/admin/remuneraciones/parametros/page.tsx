@@ -3,13 +3,14 @@ import { CompanySelector, ModulePageHeader } from '@/components/admin/ModulePage
 import { InfoTip } from '@/components/ui/InfoTip'
 import { formatCurrency, formatDate } from '@/lib/format'
 import { buildMonthlyTaxBrackets, getOfficialIndicators } from '@/lib/chile-indicators'
+import { getAutomaticPayrollDefaults } from '@/lib/official-data'
 import { createClient } from '@/utils/supabase/server'
 import { OfficialPayrollParametersForm, type OfficialPayrollParameterDefaults } from '@/app/admin/components/OfficialPayrollParametersForm'
 
 export const dynamic = 'force-dynamic'
 
 type Company = { id: string; razon_social: string; nombre_fantasia: string | null }
-type Parameter = { id: string; periodo: string; uf: number; utm: number; ingreso_minimo: number; fuente: string | null; uf_fecha: string | null; utm_periodo: string | null; indicadores_verificados_at: string | null; updated_at: string }
+type Parameter = { id: string; periodo: string; uf: number; utm: number; ingreso_minimo: number; fuente: string | null; uf_fecha: string | null; utm_periodo: string | null; indicadores_verificados_at: string | null; parametros_automaticos_at: string | null; updated_at: string }
 
 function todayInChile() {
   const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Santiago', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date())
@@ -25,58 +26,94 @@ export default async function PayrollParametersPage({ searchParams }: { searchPa
   const companies = (companyRows ?? []) as Company[]
   const selected = companies.find((item) => item.id === params.empresa) ?? companies[0] ?? null
   const { data: parameterRows, error } = selected
-    ? await supabase.from('parametros_remuneraciones').select('id, periodo, uf, utm, ingreso_minimo, fuente, uf_fecha, utm_periodo, indicadores_verificados_at, updated_at').or(`empresa_id.eq.${selected.id},empresa_id.is.null`).order('periodo', { ascending: false }).limit(24)
+    ? await supabase.from('parametros_remuneraciones').select('id, periodo, uf, utm, ingreso_minimo, fuente, uf_fecha, utm_periodo, indicadores_verificados_at, parametros_automaticos_at, updated_at').or(`empresa_id.eq.${selected.id},empresa_id.is.null`).order('periodo', { ascending: false }).limit(24)
     : { data: [], error: null }
 
   let indicators: Awaited<ReturnType<typeof getOfficialIndicators>> | null = null
+  let automaticPayroll: Awaited<ReturnType<typeof getAutomaticPayrollDefaults>> | null = null
   let indicatorError: string | null = null
-  try {
-    indicators = await getOfficialIndicators(selectedDate)
-  } catch (caught) {
-    console.error('No fue posible obtener UF/UTM oficiales:', caught)
-    indicatorError = caught instanceof Error && caught.message.includes('NOT_PUBLISHED')
+  let payrollSourceError: string | null = null
+
+  const [indicatorResult, payrollResult] = await Promise.allSettled([
+    getOfficialIndicators(selectedDate),
+    getAutomaticPayrollDefaults(selectedDate),
+  ])
+
+  if (indicatorResult.status === 'fulfilled') indicators = indicatorResult.value
+  else {
+    console.error('No fue posible obtener UF/UTM oficiales:', indicatorResult.reason)
+    indicatorError = indicatorResult.reason instanceof Error && indicatorResult.reason.message.includes('NOT_PUBLISHED')
       ? 'El SII aún no publica uno de los valores para la fecha seleccionada.'
-      : 'No fue posible consultar la fuente oficial. Puede utilizar un valor previamente verificado y dejar su fuente registrada.'
+      : 'No fue posible consultar UF/UTM en la fuente oficial. Puede usar un valor previamente verificado y registrar su fuente.'
   }
 
-  const defaults: OfficialPayrollParameterDefaults = indicators ? {
+  if (payrollResult.status === 'fulfilled') automaticPayroll = payrollResult.value
+  else {
+    console.error('No fue posible obtener parámetros previsionales automáticos:', payrollResult.reason)
+    payrollSourceError = payrollResult.reason instanceof Error && payrollResult.reason.message.includes('PERIOD_NOT_AVAILABLE')
+      ? 'PREVIRED aún no publica o no conserva en caché los indicadores del periodo seleccionado.'
+      : 'No fue posible consultar los indicadores previsionales. Los datos específicos pueden completarse manualmente, pero los valores generales deben verificarse antes de guardar.'
+  }
+
+  const defaults: OfficialPayrollParameterDefaults = {
     period: selectedDate.slice(0, 7),
-    uf: indicators.uf.valor,
-    utm: indicators.utm.valor,
-    ufDate: indicators.uf.fecha_referencia,
-    utmPeriod: indicators.utm.fecha_referencia,
-    sourceUf: indicators.uf.fuente_url,
-    sourceUtm: indicators.utm.fuente_url,
-    taxBrackets: buildMonthlyTaxBrackets(indicators.utm.valor),
-    sourceLabel: `UF y UTM: SII, consulta ${selectedDate}. Tramos mensuales de Impuesto Único derivados desde la UTM oficial. Verificar además ingreso mínimo, topes, AFP, SIS y AFC para ${selectedDate.slice(0, 7)}.`,
-  } : { period: selectedDate.slice(0, 7), taxBrackets: [] }
+    uf: indicators?.uf.valor,
+    utm: indicators?.utm.valor,
+    ufDate: indicators?.uf.fecha_referencia,
+    utmPeriod: indicators?.utm.fecha_referencia,
+    sourceUf: indicators?.uf.fuente_url,
+    sourceUtm: indicators?.utm.fuente_url,
+    taxBrackets: indicators ? buildMonthlyTaxBrackets(indicators.utm.valor) : [],
+    incomeMinimum: automaticPayroll?.incomeMinimum,
+    pensionCapUf: automaticPayroll?.pensionCapUf,
+    healthCapUf: automaticPayroll?.healthCapUf,
+    unemploymentCapUf: automaticPayroll?.unemploymentCapUf,
+    healthRate: automaticPayroll?.healthRate,
+    sisEmployerRate: automaticPayroll?.sisEmployerRate,
+    unemploymentWorkerIndefiniteRate: automaticPayroll?.unemploymentWorkerIndefiniteRate,
+    unemploymentEmployerIndefiniteRate: automaticPayroll?.unemploymentEmployerIndefiniteRate,
+    unemploymentEmployerFixedRate: automaticPayroll?.unemploymentEmployerFixedRate,
+    afpRates: automaticPayroll?.afpRates,
+    payrollSourceName: automaticPayroll?.sourceName,
+    payrollSourceUrl: automaticPayroll?.sourceUrl,
+    payrollObtainedAt: automaticPayroll?.obtainedAt,
+    automaticPayrollAvailable: Boolean(automaticPayroll),
+    trackedAdditionalValues: automaticPayroll?.trackedAdditionalValues,
+    sourceLabel: [
+      indicators ? `UF y UTM: SII, consulta ${selectedDate}` : null,
+      automaticPayroll ? `Parámetros previsionales: ${automaticPayroll.sourceName}, periodo ${automaticPayroll.period.slice(0, 7)}` : null,
+      indicators ? 'Tramos mensuales de Impuesto Único derivados desde la UTM oficial' : null,
+    ].filter(Boolean).join('. '),
+  }
 
   return (
     <div className="mx-auto max-w-[1350px]">
-      <ModulePageHeader eyebrow="Remuneraciones · Cumplimiento" title="Parámetros legales" description="Seleccione una fecha y la plataforma obtiene automáticamente la UF diaria, la UTM mensual y los tramos mensuales del Impuesto Único. Las fuentes quedan visibles y almacenadas." help="Los parámetros son versionados por mes. Un periodo de remuneraciones sólo puede abrirse cuando existe una configuración para ese mismo mes." actions={<CompanySelector companies={companies} selectedId={selected?.id} />} />
+      <ModulePageHeader eyebrow="Remuneraciones · Cumplimiento" title="Parámetros legales" description="La plataforma consulta, versiona y precarga automáticamente valores generales publicados por SII y PREVIRED. Los datos particulares de cada empresa o trabajador permanecen bajo control manual." help="Los parámetros son versionados por mes. Un periodo de remuneraciones sólo puede abrirse cuando existe una configuración para ese mismo mes." actions={<CompanySelector companies={companies} selectedId={selected?.id} />} />
 
       <section className="mt-7 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
         <form method="get" className="flex flex-col gap-4 sm:flex-row sm:items-end">
           <input type="hidden" name="empresa" value={selected?.id ?? ''} />
-          <label className="grid flex-1 gap-2 text-sm font-bold text-slate-700"><span className="inline-flex items-center">Fecha de cálculo <InfoTip>La UF es diaria. La UTM y los tramos del Impuesto Único corresponden al mes de esta fecha. Defina una política consistente sobre la fecha UF usada por cada periodo.</InfoTip></span><input type="date" name="fecha" required defaultValue={selectedDate} className="h-11 rounded-xl border border-slate-300 bg-white px-3" /></label>
-          <button className="h-11 rounded-xl bg-[#134b78] px-5 text-sm font-black text-white">Consultar valores oficiales</button>
+          <label className="grid flex-1 gap-2 text-sm font-bold text-slate-700"><span className="inline-flex items-start">Fecha de cálculo <InfoTip>La UF es diaria. La UTM y los demás parámetros se aplican al mes de esta fecha. La plataforma usa primero el historial almacenado y sincroniza la publicación vigente cuando falta.</InfoTip></span><input type="date" name="fecha" required defaultValue={selectedDate} className="h-11 rounded-xl border border-slate-300 bg-white px-3" /></label>
+          <button className="h-11 rounded-xl bg-[#134b78] px-5 text-sm font-black text-white">Consultar y sincronizar</button>
         </form>
 
         {indicatorError && <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-800">{indicatorError}</p>}
-        {indicators && <div className="mt-5 grid gap-4 sm:grid-cols-2">
-          <IndicatorCard type="UF" value={indicators.uf.valor} reference={indicators.uf.fecha_referencia} source={indicators.uf.fuente_url} explanation="Unidad de Fomento oficial para el día exacto seleccionado. Se usa para convertir topes y planes expresados en UF a pesos." />
-          <IndicatorCard type="UTM" value={indicators.utm.valor} reference={indicators.utm.fecha_referencia.slice(0, 7)} source={indicators.utm.fuente_url} explanation="Unidad Tributaria Mensual oficial del mes seleccionado. Además sirve para construir los ocho tramos mensuales del Impuesto Único." />
-        </div>}
+        {payrollSourceError && <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-800">{payrollSourceError}</p>}
+        <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {indicators && <IndicatorCard type="UF" value={indicators.uf.valor} reference={indicators.uf.fecha_referencia} source={indicators.uf.fuente_url} sourceName="SII" explanation="Unidad de Fomento oficial para el día exacto seleccionado. Se usa para convertir topes y planes expresados en UF a pesos." />}
+          {indicators && <IndicatorCard type="UTM" value={indicators.utm.valor} reference={indicators.utm.fecha_referencia.slice(0, 7)} source={indicators.utm.fuente_url} sourceName="SII" explanation="Unidad Tributaria Mensual oficial del mes seleccionado. Además sirve para construir los ocho tramos mensuales del Impuesto Único." />}
+          {automaticPayroll && <article className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5"><div className="flex items-start justify-between"><div><p className="text-xs font-black uppercase tracking-wide text-emerald-700">Previsión sincronizada</p><p className="mt-2 text-xl font-black text-[#0f2438]">{automaticPayroll.period.slice(0, 7)}</p><p className="mt-1 text-xs text-slate-500">{automaticPayroll.fromCache ? 'Historial validado' : 'Actualizado desde la fuente'}</p></div><InfoTip>Incluye ingreso mínimo general, topes imponibles, salud, SIS, AFC y tasas totales AFP. También se guardan otros valores generales publicados para futuras reglas de cálculo.</InfoTip></div><a href={automaticPayroll.sourceUrl} target="_blank" rel="noreferrer" className="mt-4 inline-flex items-center gap-2 text-xs font-black text-emerald-700 hover:underline"><AppIcon name="arrow-right" className="h-4 w-4" />Abrir fuente PREVIRED</a></article>}
+        </div>
       </section>
 
       {!selected ? <Empty /> : <>
-        <details open className="mt-7 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6"><summary className="cursor-pointer list-none text-xl font-black text-[#0f2438] [&::-webkit-details-marker]:hidden">Completar configuración del periodo</summary><p className="mt-2 text-sm leading-6 text-slate-500">UF, UTM e Impuesto Único se precargan automáticamente. Complete y verifique los demás valores antes de guardar.</p><div className="mt-6 border-t border-slate-200 pt-6"><OfficialPayrollParametersForm key={`${selected.id}-${selectedDate}`} companyId={selected.id} defaults={defaults} /></div></details>
+        <details open className="mt-7 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6"><summary className="cursor-pointer list-none text-xl font-black text-[#0f2438] [&::-webkit-details-marker]:hidden">Configuración del periodo</summary><p className="mt-2 text-sm leading-6 text-slate-500">Los parámetros generales disponibles se precargan automáticamente. Revise únicamente excepciones y antecedentes específicos antes de guardar.</p><div className="mt-6 border-t border-slate-200 pt-6"><OfficialPayrollParametersForm key={`${selected.id}-${selectedDate}`} companyId={selected.id} defaults={defaults} /></div></details>
 
-        <section className="mt-7 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6"><h2 className="text-xl font-black text-[#0f2438]">Historial de parámetros</h2><p className="mt-1 text-sm text-slate-500">Configuraciones específicas de empresa y globales disponibles para los últimos periodos.</p>{error ? <p className="mt-4 text-sm font-bold text-red-700">No fue posible cargar el historial.</p> : <div className="mt-5 grid gap-3">{((parameterRows ?? []) as Parameter[]).map((item) => <article key={item.id} className="flex flex-col gap-3 rounded-2xl border border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-black text-[#17324a]">{item.periodo.slice(0, 7)} · UF {formatCurrency(item.uf)} · UTM {formatCurrency(item.utm)}</p><p className="mt-1 text-xs text-slate-500">Ingreso mínimo {formatCurrency(item.ingreso_minimo)} · actualizado {formatDate(item.updated_at, { dateStyle: 'medium', timeStyle: 'short' })}</p><p className="mt-1 text-xs text-slate-400">{item.fuente || 'Fuente general no registrada'}</p></div><span className={`rounded-full px-3 py-1.5 text-xs font-black ${item.indicadores_verificados_at ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800'}`}>{item.indicadores_verificados_at ? 'Indicadores trazados' : 'Revisar trazabilidad'}</span></article>)}</div>}</section>
+        <section className="mt-7 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6"><h2 className="text-xl font-black text-[#0f2438]">Historial de parámetros</h2><p className="mt-1 text-sm text-slate-500">Configuraciones específicas de empresa y globales disponibles para los últimos periodos.</p>{error ? <p className="mt-4 text-sm font-bold text-red-700">No fue posible cargar el historial.</p> : <div className="mt-5 grid gap-3">{((parameterRows ?? []) as Parameter[]).map((item) => <article key={item.id} className="flex flex-col gap-3 rounded-2xl border border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-black text-[#17324a]">{item.periodo.slice(0, 7)} · UF {formatCurrency(item.uf)} · UTM {formatCurrency(item.utm)}</p><p className="mt-1 text-xs text-slate-500">Ingreso mínimo {formatCurrency(item.ingreso_minimo)} · actualizado {formatDate(item.updated_at, { dateStyle: 'medium', timeStyle: 'short' })}</p><p className="mt-1 text-xs text-slate-400">{item.fuente || 'Fuente general no registrada'}</p></div><span className={`rounded-full px-3 py-1.5 text-xs font-black ${item.indicadores_verificados_at && item.parametros_automaticos_at ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800'}`}>{item.indicadores_verificados_at && item.parametros_automaticos_at ? 'Fuentes automáticas trazadas' : 'Revisar trazabilidad'}</span></article>)}</div>}</section>
       </>}
     </div>
   )
 }
 
-function IndicatorCard({ type, value, reference, source, explanation }: { type: string; value: number; reference: string; source: string; explanation: string }) { return <article className="rounded-2xl border border-[#134b78]/20 bg-[#eaf3f9] p-5"><div className="flex items-start justify-between"><div><p className="text-xs font-black uppercase tracking-wide text-[#134b78]">{type} oficial</p><p className="mt-2 text-3xl font-black text-[#0f2438]">{formatCurrency(value)}</p><p className="mt-1 text-xs text-slate-500">Referencia {reference}</p></div><InfoTip>{explanation}</InfoTip></div><a href={source} target="_blank" rel="noreferrer" className="mt-4 inline-flex items-center gap-2 text-xs font-black text-[#134b78] hover:underline"><AppIcon name="arrow-right" className="h-4 w-4" />Abrir fuente SII</a></article> }
+function IndicatorCard({ type, value, reference, source, sourceName, explanation }: { type: string; value: number; reference: string; source: string; sourceName: string; explanation: string }) { return <article className="rounded-2xl border border-[#134b78]/20 bg-[#eaf3f9] p-5"><div className="flex items-start justify-between"><div><p className="text-xs font-black uppercase tracking-wide text-[#134b78]">{type} oficial</p><p className="mt-2 text-3xl font-black text-[#0f2438]">{formatCurrency(value)}</p><p className="mt-1 text-xs text-slate-500">Referencia {reference}</p></div><InfoTip>{explanation}</InfoTip></div><a href={source} target="_blank" rel="noreferrer" className="mt-4 inline-flex items-center gap-2 text-xs font-black text-[#134b78] hover:underline"><AppIcon name="arrow-right" className="h-4 w-4" />Abrir fuente {sourceName}</a></article> }
 function Empty() { return <div className="mt-7 rounded-3xl border border-dashed border-slate-300 bg-white p-12 text-center font-bold text-slate-500">No hay empresas disponibles.</div> }
