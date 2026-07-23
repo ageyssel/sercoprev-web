@@ -20,7 +20,13 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: 9021b712f9a73815e6b333a4870e0021
       SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      SUPABASE_DB_URL_SECRET: ${{ secrets.SUPABASE_DB_URL }}
+      SUPABASE_DATABASE_URL_SECRET: ${{ secrets.SUPABASE_DATABASE_URL }}
+      DATABASE_URL_SECRET: ${{ secrets.DATABASE_URL }}
+      POSTGRES_URL_SECRET: ${{ secrets.POSTGRES_URL }}
+      SUPABASE_DB_PASSWORD_SECRET: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      SUPABASE_DATABASE_PASSWORD_SECRET: ${{ secrets.SUPABASE_DATABASE_PASSWORD }}
+      POSTGRES_PASSWORD_SECRET: ${{ secrets.POSTGRES_PASSWORD }}
       RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
       WHATSAPP_ACCESS_TOKEN: ${{ secrets.WHATSAPP_ACCESS_TOKEN }}
       WHATSAPP_PHONE_NUMBER_ID: ${{ secrets.WHATSAPP_PHONE_NUMBER_ID }}
@@ -48,8 +54,14 @@ jobs:
             exit 1
           fi
 
-          if [ -z "${SUPABASE_DB_URL:-}" ]; then
-            echo '::error title=Missing Supabase database connection::Add SUPABASE_DB_URL as a repository Actions secret. Deployment stops before database or Worker changes.'
+          if [ -z "${SUPABASE_DB_URL_SECRET:-}" ] \
+            && [ -z "${SUPABASE_DATABASE_URL_SECRET:-}" ] \
+            && [ -z "${DATABASE_URL_SECRET:-}" ] \
+            && [ -z "${POSTGRES_URL_SECRET:-}" ] \
+            && [ -z "${SUPABASE_DB_PASSWORD_SECRET:-}" ] \
+            && [ -z "${SUPABASE_DATABASE_PASSWORD_SECRET:-}" ] \
+            && [ -z "${POSTGRES_PASSWORD_SECRET:-}" ]; then
+            echo '::error title=Missing Supabase database connection::Add SUPABASE_DB_URL, DATABASE_URL, POSTGRES_URL or a Supabase database password secret. Deployment stops before database or Worker changes.'
             exit 1
           fi
 
@@ -77,6 +89,69 @@ jobs:
             sudo apt-get install -y --no-install-recommends postgresql-client
           fi
           psql --version
+
+      - name: Resolve Supabase database connection
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          direct_url=''
+          for candidate in \
+            "${SUPABASE_DB_URL_SECRET:-}" \
+            "${SUPABASE_DATABASE_URL_SECRET:-}" \
+            "${DATABASE_URL_SECRET:-}" \
+            "${POSTGRES_URL_SECRET:-}"; do
+            if [ -n "$candidate" ]; then
+              direct_url="$candidate"
+              break
+            fi
+          done
+
+          if [ -n "$direct_url" ]; then
+            echo "::add-mask::$direct_url"
+            if ! psql "$direct_url" -v ON_ERROR_STOP=1 -Atqc 'select 1' >/dev/null; then
+              echo '::error title=Invalid Supabase database URL::A configured database URL exists but PostgreSQL could not connect.'
+              exit 1
+            fi
+            echo "SUPABASE_DB_URL=$direct_url" >> "$GITHUB_ENV"
+            echo 'Supabase database connection resolved from an existing URL secret.'
+            exit 0
+          fi
+
+          password=''
+          for candidate in \
+            "${SUPABASE_DB_PASSWORD_SECRET:-}" \
+            "${SUPABASE_DATABASE_PASSWORD_SECRET:-}" \
+            "${POSTGRES_PASSWORD_SECRET:-}"; do
+            if [ -n "$candidate" ]; then
+              password="$candidate"
+              break
+            fi
+          done
+
+          encoded_password=$(PASSWORD="$password" python - <<'PY'
+          import os
+          from urllib.parse import quote
+          print(quote(os.environ['PASSWORD'], safe=''))
+          PY
+          )
+
+          project_ref='kxrxlygnhukfmdgqhoaz'
+          regions=(sa-east-1 us-east-1 us-west-1 eu-west-1 eu-central-1 ap-southeast-1 ap-northeast-1)
+          for region in "${regions[@]}"; do
+            for cluster in 0 1; do
+              candidate="postgresql://postgres.${project_ref}:${encoded_password}@aws-${cluster}-${region}.pooler.supabase.com:5432/postgres?sslmode=require&connect_timeout=6"
+              echo "::add-mask::$candidate"
+              if psql "$candidate" -v ON_ERROR_STOP=1 -Atqc 'select 1' >/dev/null 2>&1; then
+                echo "SUPABASE_DB_URL=$candidate" >> "$GITHUB_ENV"
+                echo "Supabase session pooler resolved for region $region."
+                exit 0
+              fi
+            done
+          done
+
+          echo '::error title=Supabase database connection failed::A database password secret exists, but no supported Supabase session pooler accepted it. Add the complete SUPABASE_DB_URL secret.'
+          exit 1
 
       - name: Apply pending Supabase migrations
         shell: bash
