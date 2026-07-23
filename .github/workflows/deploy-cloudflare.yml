@@ -50,7 +50,7 @@ jobs:
             echo '::error title=Missing Supabase database connection::Add a PostgreSQL URI or database password secret.'
             exit 1
           fi
-          [ -n "${RESEND_API_KEY:-}" ] || echo '::warning title=Email notifications disabled::RESEND_API_KEY is not configured.'
+          test -n "${RESEND_API_KEY:-}" || { echo '::error title=Missing MFA email credential::RESEND_API_KEY is required for staff email MFA.'; exit 1; }
           if [ -z "${WHATSAPP_ACCESS_TOKEN:-}" ] || [ -z "${WHATSAPP_PHONE_NUMBER_ID:-}" ]; then
             echo '::warning title=WhatsApp notifications disabled::WhatsApp remains optional and does not block deployment.'
           fi
@@ -151,6 +151,7 @@ jobs:
             supabase/migrations/202607230012_automatic_official_data.sql
             supabase/migrations/202607230013_immutable_payroll_and_indicator_history.sql
             supabase/migrations/202607230014_closed_record_integrity.sql
+            supabase/migrations/202607230015_staff_email_mfa.sql
           )
           for migration in "${migrations[@]}"; do test -f "$migration"; done
 
@@ -190,7 +191,9 @@ jobs:
               (to_regclass('public.empresa_usuarios')),
               (to_regclass('public.indicadores_oficiales')),
               (to_regclass('public.datos_oficiales')),
-              (to_regclass('public.datos_oficiales_versiones'))
+              (to_regclass('public.datos_oficiales_versiones')),
+              (to_regclass('public.staff_mfa_challenges')),
+              (to_regclass('public.staff_mfa_sessions'))
             ) as required(table_name) where table_name is null;")
           test "$missing_tables" = '0'
 
@@ -230,8 +233,10 @@ jobs:
           test "$missing_triggers" = '0'
 
           recorded_protection=$(psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -Atqc "select count(*) from public.sercoprev_schema_migrations where filename = '202607230014_closed_record_integrity.sql'")
+          recorded_mfa=$(psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -Atqc "select count(*) from public.sercoprev_schema_migrations where filename = '202607230015_staff_email_mfa.sql'")
           test "$recorded_protection" = '1'
-          echo 'Supabase migrations, official history, payroll and accounting immutability protections verified.'
+          test "$recorded_mfa" = '1'
+          echo 'Supabase migrations, immutable records and staff MFA schema verified.'
 
       - name: Setup Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
@@ -295,26 +300,30 @@ jobs:
           for attempt in $(seq 1 40); do
             home_status=$(curl -sSL --max-time 20 -o /tmp/home.html -w '%{http_code}' 'https://www.sercoprev.cl/' || true)
             login_status=$(curl -sSL --max-time 20 -o /tmp/login.html -w '%{http_code}' 'https://www.sercoprev.cl/login' || true)
+            verify_status=$(curl -sSL --max-time 20 -o /tmp/verify.html -w '%{http_code}' 'https://www.sercoprev.cl/login/verificar-codigo' || true)
             health_status=$(curl -sSL --max-time 20 -o /tmp/health.json -w '%{http_code}' 'https://www.sercoprev.cl/api/health' || true)
             version_status=$(curl -sSL --max-time 20 -o /tmp/version.json -w '%{http_code}' 'https://www.sercoprev.cl/api/version' || true)
             if [ "$home_status" = '200' ] \
               && [ "$login_status" = '200' ] \
+              && { [ "$verify_status" = '302' ] || [ "$verify_status" = '307' ] || [ "$verify_status" = '308' ]; } \
               && [ "$health_status" = '200' ] \
               && [ "$version_status" = '200' ] \
               && grep -qi 'SERCOPREV' /tmp/home.html \
               && grep -qi 'Ingrese a su portal' /tmp/login.html \
               && grep -q '"status":"ok"' /tmp/health.json \
-              && grep -q '"release":"2026-07-23-closed-record-integrity-1"' /tmp/health.json \
+              && grep -q '"release":"2026-07-23-staff-email-mfa-1"' /tmp/health.json \
               && grep -q '"operationalSchema":true' /tmp/health.json \
               && grep -q '"payrollSchema":true' /tmp/health.json \
               && grep -q '"accountingSchema":true' /tmp/health.json \
               && grep -q '"officialIndicatorsSchema":true' /tmp/health.json \
               && grep -q '"officialDataSchema":true' /tmp/health.json \
               && grep -q '"officialDataHistorySchema":true' /tmp/health.json \
+              && grep -q '"officialDataFreshness":true' /tmp/health.json \
               && grep -q '"closedRecordsProtectionSchema":true' /tmp/health.json \
               && grep -q '"userAccessSchema":true' /tmp/health.json \
+              && grep -q '"staffMfaSchema":true' /tmp/health.json \
               && grep -q '"documentIntakeSchema":true' /tmp/health.json \
-              && grep -q '"release":"2026-07-23-closed-record-integrity-1"' /tmp/version.json; then
+              && grep -q '"release":"2026-07-23-staff-email-mfa-1"' /tmp/version.json; then
               healthy=true
               break
             fi
@@ -322,6 +331,7 @@ jobs:
           done
           echo "GET / => ${home_status:-unknown}"
           echo "GET /login => ${login_status:-unknown}"
+          echo "GET /login/verificar-codigo => ${verify_status:-unknown}"
           echo "GET /api/health => ${health_status:-unknown}"
           echo "GET /api/version => ${version_status:-unknown}"
           cat /tmp/health.json 2>/dev/null || true
