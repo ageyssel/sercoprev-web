@@ -1,0 +1,60 @@
+name: Patch Staff MFA Deploy
+
+on:
+  push:
+    branches: [feature/staff-email-mfa-24h]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: feature/staff-email-mfa-24h
+          fetch-depth: 0
+
+      - name: Patch deploy contract and remove helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          deploy = Path('.github/workflows/deploy-cloudflare.yml')
+          text = deploy.read_text()
+          migration = '            supabase/migrations/202607230015_staff_email_mfa.sql\n'
+          migration_anchor = '            supabase/migrations/202607230014_closed_record_integrity.sql\n'
+          if migration not in text:
+              if migration_anchor not in text:
+                  raise SystemExit('Migration anchor not found')
+              text = text.replace(migration_anchor, migration_anchor + migration, 1)
+
+          table_anchor = "              (to_regclass('public.datos_oficiales_versiones'))\n"
+          mfa_tables = "              (to_regclass('public.staff_mfa_challenges')),\n              (to_regclass('public.staff_mfa_sessions'))\n"
+          if "public.staff_mfa_challenges" not in text:
+              if table_anchor not in text:
+                  raise SystemExit('Table anchor not found')
+              text = text.replace(table_anchor, "              (to_regclass('public.datos_oficiales_versiones')),\n" + mfa_tables, 1)
+
+          text = text.replace('2026-07-23-closed-record-integrity-1', '2026-07-23-staff-email-mfa-1')
+          health_anchor = "              && grep -q '\"userAccessSchema\":true' /tmp/health.json \\\n"
+          mfa_health = "              && grep -q '\"staffMfaSchema\":true' /tmp/health.json \\\n"
+          if mfa_health not in text:
+              if health_anchor not in text:
+                  raise SystemExit('Health anchor not found')
+              text = text.replace(health_anchor, health_anchor + mfa_health, 1)
+
+          deploy.write_text(text)
+          Path('.github/workflows/patch-staff-mfa-deploy.yml').unlink()
+          PY
+
+          git config user.name 'SERCOPREV Automation'
+          git config user.email 'actions@users.noreply.github.com'
+          git add .github/workflows/deploy-cloudflare.yml .github/workflows/patch-staff-mfa-deploy.yml
+          git commit -m 'Integrar migración y health del MFA interno'
+          git push origin HEAD:feature/staff-email-mfa-24h
