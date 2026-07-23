@@ -1,0 +1,49 @@
+name: Official Source HTML Capture
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  capture:
+    if: github.head_ref == 'ops/official-sync-diagnostic'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Fetch official source responses
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/official-sources
+          curl -sSL --max-time 60 -A 'SERCOPREV/1.0 (+https://www.sercoprev.cl)' \
+            -D /tmp/official-sources/sii-uf.headers \
+            -o /tmp/official-sources/sii-uf.html \
+            'https://www.sii.cl/valores_y_fechas/uf/uf2026.htm'
+          curl -sSL --max-time 60 -A 'SERCOPREV/1.0 (+https://www.sercoprev.cl)' \
+            -D /tmp/official-sources/sii-utm.headers \
+            -o /tmp/official-sources/sii-utm.html \
+            'https://www.sii.cl/valores_y_fechas/utm/utm2026.htm'
+          curl -sSL --max-time 60 -A 'SERCOPREV/1.0 (+https://www.sercoprev.cl)' \
+            -D /tmp/official-sources/bcentral-home.headers \
+            -o /tmp/official-sources/bcentral-home.html \
+            'https://www.bcentral.cl/es/web/banco-central/inicio/-/details/contenido-general-ver-todos-los-indicadores-diarios'
+          curl -sSL --max-time 60 -A 'SERCOPREV/1.0 (+https://www.sercoprev.cl)' \
+            -D /tmp/official-sources/bcentral-mobile.headers \
+            -o /tmp/official-sources/bcentral-mobile.html \
+            'https://si3.bcentral.cl/Bdemovil/BDE/IndicadoresDiarios'
+          curl -sSL --max-time 60 -A 'SERCOPREV/1.0 (+https://www.sercoprev.cl)' \
+            -D /tmp/official-sources/bcentral-seven.headers \
+            -o /tmp/official-sources/bcentral-seven.html \
+            'https://si3.bcentral.cl/Indicadoressiete/secure/IndicadoresDiarios.aspx?Idioma=es-CL'
+          wc -c /tmp/official-sources/*
+
+      - name: Upload official source responses
+        uses: actions/upload-artifact@v4
+        with:
+          name: official-source-html
+          path: /tmp/official-sources
+          if-no-files-found: error
+          retention-days: 1
