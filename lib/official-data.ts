@@ -331,7 +331,7 @@ function parseBancoCentralSupplemental(html: string, period: string, referenceDa
     codigo: code,
     periodo: period,
     valor: value,
-    unidad,
+    unidad: unit,
     fuente_nombre: 'Banco Central de Chile — Indicadores económicos',
     fuente_url: BANCO_CENTRAL_SUPPLEMENTAL_URL,
     obtenido_at: obtainedAt,
