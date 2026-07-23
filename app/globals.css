@@ -1,19 +1,30 @@
 @import "tailwindcss";
 
 @theme {
-  --color-primary: #134b78;
-  --color-accent: #d6ad4d;
-  --color-navy: #0f2438;
-  --color-background: #f4f7f9;
-  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --color-primary: #174f7a;
+  --color-accent: #cfa84b;
+  --color-navy: #10283d;
+  --color-background: #f6f8fb;
+  --font-sans: var(--font-manrope), ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 :root {
-  --background: #f4f7f9;
-  --foreground: #17324a;
-  --navy: #0f2438;
-  --blue: #134b78;
-  --gold: #d6ad4d;
+  --background: #f6f8fb;
+  --foreground: #1c3348;
+  --navy: #10283d;
+  --navy-soft: #173d59;
+  --blue: #174f7a;
+  --blue-soft: #edf4f9;
+  --gold: #cfa84b;
+  --gold-soft: #fbf6e8;
+  --surface: #ffffff;
+  --surface-muted: #f8fafc;
+  --border: #dce4eb;
+  --border-strong: #cbd6df;
+  --muted: #66788a;
+  --shadow-sm: 0 8px 24px rgba(15, 36, 56, 0.055);
+  --shadow-md: 0 18px 48px rgba(15, 36, 56, 0.085);
+  --shadow-lg: 0 28px 70px rgba(15, 36, 56, 0.12);
 }
 
 * {
@@ -33,6 +44,8 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans);
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  text-rendering: optimizeLegibility;
 }
 
 button,
@@ -49,20 +62,139 @@ summary {
   -webkit-tap-highlight-color: transparent;
 }
 
+button,
+a,
+input,
+select,
+textarea,
+summary {
+  transition-property: color, background-color, border-color, box-shadow, transform, opacity;
+  transition-duration: 160ms;
+  transition-timing-function: ease;
+}
+
 ::selection {
-  background: rgba(214, 173, 77, 0.32);
-  color: #0f2438;
+  background: rgba(207, 168, 75, 0.3);
+  color: #10283d;
 }
 
 :focus-visible {
-  outline: 3px solid rgba(19, 75, 120, 0.28);
+  outline: 3px solid rgba(23, 79, 122, 0.2);
   outline-offset: 2px;
+}
+
+.admin-shell {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 80% -10%, rgba(23, 79, 122, 0.08), transparent 30rem),
+    linear-gradient(180deg, #f8fafc 0%, #f4f7fa 100%);
+  color: var(--foreground);
+}
+
+.admin-shell main {
+  isolation: isolate;
+}
+
+.admin-shell main > div {
+  width: 100%;
+}
+
+.admin-shell main h1,
+.admin-shell main h2,
+.admin-shell main h3 {
+  text-wrap: balance;
+}
+
+.admin-shell main h1 {
+  letter-spacing: -0.035em;
+  line-height: 1.08;
+}
+
+.admin-shell main h2 {
+  letter-spacing: -0.022em;
+}
+
+.admin-shell main input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+.admin-shell main select,
+.admin-shell main textarea {
+  border-color: var(--border-strong);
+  background-color: rgba(255, 255, 255, 0.98);
+  color: #193247;
+  box-shadow: 0 1px 2px rgba(15, 36, 56, 0.025);
+}
+
+.admin-shell main input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):hover,
+.admin-shell main select:hover,
+.admin-shell main textarea:hover {
+  border-color: #aebdca;
+}
+
+.admin-shell main input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):focus,
+.admin-shell main select:focus,
+.admin-shell main textarea:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 4px rgba(23, 79, 122, 0.09);
+  outline: none;
+}
+
+.admin-shell main input::placeholder,
+.admin-shell main textarea::placeholder {
+  color: #97a6b4;
+}
+
+.admin-shell main section[class*="bg-white"],
+.admin-shell main article[class*="bg-white"] {
+  border-color: var(--border);
+  box-shadow: var(--shadow-sm);
+}
+
+.admin-shell main table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.admin-shell main thead th {
+  background: #f7f9fb;
+  color: #647789;
+  font-size: 0.7rem;
+  letter-spacing: 0.075em;
+}
+
+.admin-shell main tbody tr {
+  transition: background-color 140ms ease;
+}
+
+.admin-shell main tbody tr:hover {
+  background-color: rgba(237, 244, 249, 0.48);
+}
+
+.admin-shell main button:not(:disabled):active,
+.admin-shell main a[class*="rounded"]:active {
+  transform: translateY(1px);
+}
+
+.admin-shell .admin-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+.admin-shell .admin-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.admin-shell .admin-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.admin-shell .admin-scrollbar::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
 }
 
 @keyframes fadeInUp {
   from {
     opacity: 0;
-    transform: translateY(18px);
+    transform: translateY(14px);
   }
   to {
     opacity: 1;
@@ -76,7 +208,7 @@ summary {
 }
 
 .animate-fade-in {
-  animation: fadeInUp 0.55s ease-out both;
+  animation: fadeInUp 0.42s ease-out both;
 }
 
 .animate-pulse-soft {
@@ -89,6 +221,12 @@ summary {
 
 summary {
   user-select: none;
+}
+
+@media (max-width: 1023px) {
+  .admin-shell main {
+    padding-bottom: 5rem;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
