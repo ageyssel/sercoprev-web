@@ -11,6 +11,7 @@ export type UserContext =
       displayName: string
       role: StaffRole
       canWrite: boolean
+      mustChangePassword: boolean
     }
   | {
       kind: 'client'
@@ -40,12 +41,13 @@ export async function resolveUserContext(existingClient?: SupabaseClient): Promi
       displayName: directProfile.razon_social || user.email || 'Administrador SERCOPREV',
       role: 'Superadministrador',
       canWrite: true,
+      mustChangePassword: directProfile.must_change_password,
     }
   }
 
   const { data: staffProfile } = await supabase
     .from('usuarios_organizacion')
-    .select('nombre, rol, activo')
+    .select('nombre, rol, activo, must_change_password')
     .eq('user_id', user.id)
     .eq('activo', true)
     .maybeSingle()
@@ -58,6 +60,7 @@ export async function resolveUserContext(existingClient?: SupabaseClient): Promi
       displayName: staffProfile.nombre,
       role,
       canWrite: role !== 'Lectura',
+      mustChangePassword: staffProfile.must_change_password,
     }
   }
 
