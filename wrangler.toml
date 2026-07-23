@@ -1,7 +1,7 @@
 name = "sercoprev-web"
 compatibility_date = "2025-04-01"
 compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
-main = ".open-next/worker.js"
+main = "custom-worker.ts"
 
 [assets]
 directory = ".open-next/assets"
@@ -10,6 +10,11 @@ binding = "ASSETS"
 [[services]]
 binding = "WORKER_SELF_REFERENCE"
 service = "sercoprev-web"
+
+# Ejecución diaria a las 10:15 UTC. La sincronización también se activa bajo
+# demanda al abrir Parámetros legales cuando el periodo aún no está almacenado.
+[triggers]
+crons = ["15 10 * * *"]
 
 [observability]
 enabled = true
