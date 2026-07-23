@@ -1,9 +1,9 @@
 import type { Metadata } from 'next'
-import { Inter, Playfair_Display } from 'next/font/google'
+import { Manrope, Playfair_Display } from 'next/font/google'
 import './globals.css'
 
-const playfair = Playfair_Display({ subsets: ['latin'], variable: '--font-playfair' })
-const inter = Inter({ subsets: ['latin'], variable: '--font-inter' })
+const playfair = Playfair_Display({ subsets: ['latin'], variable: '--font-playfair', display: 'swap' })
+const manrope = Manrope({ subsets: ['latin'], variable: '--font-manrope', display: 'swap' })
 
 export const metadata: Metadata = {
   title: 'SERCOPREV - Contabilidad y Gestión',
@@ -22,7 +22,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="es" className="scroll-smooth">
-      <body className={`${inter.variable} ${playfair.variable} font-sans bg-[#fafafa] text-[#0f172a] antialiased`}>
+      <body className={`${manrope.variable} ${playfair.variable} font-sans antialiased`}>
         {children}
       </body>
     </html>

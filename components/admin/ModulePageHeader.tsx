@@ -9,12 +9,17 @@ export function CompanySelector({ companies, selectedId }: { companies: CompanyS
 export function ModulePageHeader({ eyebrow, title, description, help, actions }: { eyebrow: string; title: string; description: string; help?: React.ReactNode; actions?: React.ReactNode }) {
   return (
     <header className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-      <div>
-        <p className="text-xs font-black uppercase tracking-[0.18em] text-[#a47b24]">{eyebrow}</p>
-        <h1 className="mt-2 inline-flex items-center text-3xl font-black tracking-tight text-[#0f2438] sm:text-4xl">{title}{help && <InfoTip title={`Acerca de ${title}`}>{help}</InfoTip>}</h1>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">{description}</p>
+      <div className="min-w-0 max-w-4xl">
+        <div className="flex items-center gap-2.5">
+          <span className="h-px w-6 bg-[#cfa84b]" />
+          <p className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-[#8a681d]">{eyebrow}</p>
+        </div>
+        <h1 className="mt-3 inline-flex items-center text-[2rem] font-extrabold tracking-[-0.035em] text-[#10283d] sm:text-[2.35rem]">
+          {title}{help && <InfoTip title={`Acerca de ${title}`}>{help}</InfoTip>}
+        </h1>
+        <p className="mt-2.5 max-w-3xl text-[13px] font-medium leading-6 text-slate-500 sm:text-sm">{description}</p>
       </div>
-      {actions}
+      {actions && <div className="w-full shrink-0 lg:w-auto">{actions}</div>}
     </header>
   )
 }

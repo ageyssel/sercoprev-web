@@ -1,7 +1,8 @@
 import Link from 'next/link'
 import { AppIcon, type AppIconName } from '@/components/AppIcon'
-import { CompanySelector } from '@/components/admin/ModulePageHeader'
+import { CompanySelector, ModulePageHeader } from '@/components/admin/ModulePageHeader'
 import { InfoTip } from '@/components/ui/InfoTip'
+import { MetricCard } from '@/components/ui/MetricCard'
 import { formatCurrency } from '@/lib/format'
 import { createClient } from '@/utils/supabase/server'
 
@@ -36,40 +37,35 @@ export default async function AccountingOverview({ searchParams }: { searchParam
     { href: `/admin/contabilidad/diario${companyQuery}`, title: 'Libro diario', description: 'Creación, revisión y contabilización de asientos con control automático de cuadratura.', icon: 'document', badge: `${draftEntries} borradores` },
     { href: `/admin/contabilidad/documentos${companyQuery}`, title: 'Compras y ventas', description: 'Documentos tributarios, IVA, contrapartes, folios y base para centralización.', icon: 'money' },
     { href: `/admin/contabilidad/importaciones${companyQuery}`, title: 'RCV y cartolas', description: 'Carga masiva, deduplicación, cuentas bancarias y conciliación exacta.', icon: 'upload', badge: `${banks.count ?? 0} bancos` },
-    { href: `/admin/contabilidad/reportes${companyQuery}`, title: 'Libros, rentabilidad y reportes', description: 'Balance de comprobación, mayor, estado de resultados, rentabilidad y balance clasificado.', icon: 'tasks' },
+    { href: `/admin/contabilidad/reportes${companyQuery}`, title: 'Reportes y rentabilidad', description: 'Balance, mayor, estado de resultados, rentabilidad y balance clasificado.', icon: 'tasks' },
   ]
 
   return (
     <div className="mx-auto max-w-[1450px]">
-      <header className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <p className="text-xs font-black uppercase tracking-[0.18em] text-[#a47b24]">Macromódulo financiero y tributario</p>
-          <h1 className="mt-2 text-3xl font-black tracking-tight text-[#0f2438] sm:text-4xl">Contabilidad y rentabilidad</h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">Una portada ejecutiva y pantallas separadas por proceso: configuración, registro, importación, conciliación, rentabilidad y reportes.</p>
-        </div>
-        <CompanySelector companies={companies} selectedId={selected?.id} />
-      </header>
+      <ModulePageHeader eyebrow="Macromódulo financiero y tributario" title="Contabilidad y rentabilidad" description="Procesos separados y ordenados para configurar, registrar, importar, conciliar y analizar resultados financieros." actions={<CompanySelector companies={companies} selectedId={selected?.id} />} />
 
       {!selected ? <Empty /> : <>
-        <section className="mt-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <Metric icon="document" label="Cuentas activas" value={String(accounts.count ?? 0)} help="Cuentas habilitadas en el plan de cuentas de la empresa." />
-          <Metric icon="calendar" label="Periodos abiertos" value={String(openPeriods)} help="Periodos que permiten registrar o modificar asientos antes del cierre." />
-          <Metric icon="money" label="Compras registradas" value={formatCurrency(purchases)} help="Suma del total de documentos clasificados como compras dentro del universo cargado." />
-          <Metric icon="money" label="Ventas registradas" value={formatCurrency(sales)} help="Suma del total de documentos clasificados como ventas dentro del universo cargado." />
+        <section className="mt-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <MetricCard icon="document" label="Cuentas activas" value={String(accounts.count ?? 0)} detail="Plan de cuentas habilitado" tone="blue" />
+          <MetricCard icon="calendar" label="Periodos abiertos" value={String(openPeriods)} detail="Disponibles para registrar" tone="navy" />
+          <MetricCard icon="money" label="Compras registradas" value={formatCurrency(purchases)} detail="Documentos cargados" tone="gold" />
+          <MetricCard icon="money" label="Ventas registradas" value={formatCurrency(sales)} detail="Documentos cargados" tone="green" />
         </section>
 
-        <section className="mt-7 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <section className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {cards.map((card) => <ModuleLink key={card.href} {...card} />)}
         </section>
 
-        <section className="mt-7 rounded-3xl border border-[#134b78]/20 bg-[#eaf3f9] p-5 sm:p-6">
-          <div className="flex items-start gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-[#134b78]"><AppIcon name="check" className="h-5 w-5" /></span><div><h2 className="inline-flex items-center text-lg font-black text-[#0f2438]">Control contable <InfoTip title="Principio de cuadratura">Un asiento sólo puede contabilizarse si el total del Debe es igual al total del Haber. Los reportes se construyen exclusivamente con asientos contabilizados.</InfoTip></h2><p className="mt-2 text-sm leading-6 text-slate-600">Configura la estructura una vez, registra o importa la operación, revisa las excepciones y recién después emite libros e informes.</p></div></div>
+        <section className="mt-6 rounded-2xl border border-[#174f7a]/15 bg-[#edf4f9] p-5 shadow-none">
+          <div className="flex items-start gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-[#174f7a] shadow-sm"><AppIcon name="check" className="h-4 w-4" /></span><div><h2 className="inline-flex items-center text-base font-extrabold text-[#10283d]">Control contable <InfoTip title="Principio de cuadratura">Un asiento sólo puede contabilizarse si el total del Debe es igual al total del Haber. Los reportes se construyen exclusivamente con asientos contabilizados.</InfoTip></h2><p className="mt-1.5 text-xs font-medium leading-5 text-slate-600">Configure la estructura una vez, registre o importe la operación, revise excepciones y luego emita libros e informes.</p></div></div>
         </section>
       </>}
     </div>
   )
 }
 
-function Metric({ icon, label, value, help }: { icon: AppIconName; label: string; value: string; help: string }) { return <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-start justify-between"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#eaf3f9] text-[#134b78]"><AppIcon name={icon} className="h-5 w-5" /></span><InfoTip>{help}</InfoTip></div><p className="mt-4 text-2xl font-black text-[#0f2438]">{value}</p><p className="mt-1 text-xs font-bold uppercase tracking-wide text-slate-500">{label}</p></article> }
-function ModuleLink({ href, title, description, icon, badge }: Card) { return <Link href={href} className="group rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-[#134b78]/35 hover:shadow-md"><div className="flex items-start justify-between gap-4"><span className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#eaf3f9] text-[#134b78] group-hover:bg-[#134b78] group-hover:text-white"><AppIcon name={icon} className="h-5 w-5" /></span>{badge && <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-black text-slate-500">{badge}</span>}</div><h2 className="mt-4 text-lg font-black text-[#0f2438]">{title}</h2><p className="mt-2 text-sm leading-6 text-slate-500">{description}</p><span className="mt-4 inline-flex items-center gap-2 text-xs font-black text-[#134b78]">Abrir sección <AppIcon name="arrow-right" className="h-4 w-4" /></span></Link> }
-function Empty() { return <div className="mt-7 rounded-3xl border border-dashed border-slate-300 bg-white p-14 text-center font-bold text-slate-500">Cree al menos un cliente para utilizar contabilidad.</div> }
+function ModuleLink({ href, title, description, icon, badge }: Card) {
+  return <Link href={href} className="group rounded-2xl border border-slate-200 bg-white p-4 shadow-sm hover:-translate-y-0.5 hover:border-[#174f7a]/25 hover:shadow-md sm:p-5"><div className="flex items-start justify-between gap-4"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#edf4f9] text-[#174f7a] group-hover:bg-[#174f7a] group-hover:text-white"><AppIcon name={icon} className="h-4 w-4" /></span>{badge && <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-extrabold text-slate-500">{badge}</span>}</div><h2 className="mt-3.5 text-base font-extrabold text-[#10283d]">{title}</h2><p className="mt-1.5 text-xs font-medium leading-5 text-slate-500">{description}</p><span className="mt-3.5 inline-flex items-center gap-1.5 text-[10px] font-extrabold uppercase tracking-[0.08em] text-[#174f7a]">Abrir sección <AppIcon name="arrow-right" className="h-3.5 w-3.5" /></span></Link>
+}
+
+function Empty() { return <div className="mt-7 rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center text-sm font-bold text-slate-500">Cree al menos un cliente para utilizar contabilidad.</div> }
