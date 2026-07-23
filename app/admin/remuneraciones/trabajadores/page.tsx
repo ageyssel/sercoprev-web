@@ -17,17 +17,21 @@ export default async function WorkersPage({ searchParams }: { searchParams: Prom
   const { data: companyRows } = await supabase.from('empresas').select('id, razon_social, nombre_fantasia').eq('es_admin', false).order('razon_social')
   const companies = (companyRows ?? []) as Company[]
   const selected = companies.find((item) => item.id === params.empresa) ?? companies[0] ?? null
-  const [{ data: workerRows, error }, { data: centerRows }] = selected ? await Promise.all([
-    supabase.from('trabajadores').select('id, rut, nombres, apellido_paterno, apellido_materno, email, telefono, estado, afp, salud_tipo, salud_institucion, afc_aplica, fecha_ingreso').eq('empresa_id', selected.id).order('apellido_paterno'),
-    supabase.from('centros_costo').select('id, codigo, nombre').eq('empresa_id', selected.id).eq('activo', true).order('codigo'),
-  ]) : [{ data: [], error: null }, { data: [], error: null }]
-  const workers = (workerRows ?? []) as Worker[]
-  const centers: SelectOption[] = (centerRows ?? []).map((item) => ({ id: item.id, label: `${item.codigo} · ${item.nombre}` }))
+
+  const workersResult = selected
+    ? await supabase.from('trabajadores').select('id, rut, nombres, apellido_paterno, apellido_materno, email, telefono, estado, afp, salud_tipo, salud_institucion, afc_aplica, fecha_ingreso').eq('empresa_id', selected.id).order('apellido_paterno')
+    : { data: [] as Worker[], error: null }
+  const centersResult = selected
+    ? await supabase.from('centros_costo').select('id, codigo, nombre').eq('empresa_id', selected.id).eq('activo', true).order('codigo')
+    : { data: [] as Array<{ id: string; codigo: string; nombre: string }>, error: null }
+
+  const workers = (workersResult.data ?? []) as Worker[]
+  const centers: SelectOption[] = (centersResult.data ?? []).map((item) => ({ id: item.id, label: `${item.codigo} · ${item.nombre}` }))
 
   return (
     <div className="mx-auto max-w-[1350px]">
       <ModulePageHeader eyebrow="Remuneraciones · Personas" title="Trabajadores" description="Ficha laboral y previsional. Mantenga aquí sólo los antecedentes permanentes del trabajador; las novedades mensuales se registran en su sección propia." help="La exactitud de AFP, salud, AFC, fecha de ingreso y centro de costo condiciona todos los cálculos posteriores." actions={<CompanySelector companies={companies} selectedId={selected?.id} />} />
-      {error && <ErrorBox />}
+      {workersResult.error && <ErrorBox />}
       {!selected ? <Empty text="No hay empresas disponibles." /> : <>
         <section className="mt-7 grid gap-4 sm:grid-cols-3"><Metric label="Activos" value={workers.filter((item) => item.estado === 'Activo').length} /><Metric label="Sin AFP informada" value={workers.filter((item) => !item.afp).length} /><Metric label="Sin contacto" value={workers.filter((item) => !item.email && !item.telefono).length} /></section>
 
