@@ -3,6 +3,8 @@ name: Deploy Cloudflare
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -14,6 +16,7 @@ concurrency:
 
 jobs:
   deploy:
+    if: github.event_name != 'pull_request' || github.head_ref == 'ops/verified-production-deploy'
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     env:
