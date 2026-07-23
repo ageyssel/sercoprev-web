@@ -1,0 +1,41 @@
+name: Patch Official Data Typo
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.head_ref == 'hotfix/official-source-parsers'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: hotfix/official-source-parsers
+          fetch-depth: 0
+
+      - name: Correct unit property and push
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('lib/official-data.ts')
+          text = path.read_text()
+          old = "    unidad,\n    fuente_nombre: 'Banco Central de Chile — Indicadores económicos',"
+          new = "    unidad: unit,\n    fuente_nombre: 'Banco Central de Chile — Indicadores económicos',"
+          if old not in text:
+              print('Target already corrected; no change required.')
+          else:
+              path.write_text(text.replace(old, new, 1))
+          PY
+          if git diff --quiet; then exit 0; fi
+          git config user.name 'SERCOPREV Automation'
+          git config user.email 'actions@users.noreply.github.com'
+          git add lib/official-data.ts
+          git commit -m 'Corregir propiedad de unidad en datos BCCh'
+          git push origin HEAD:hotfix/official-source-parsers
