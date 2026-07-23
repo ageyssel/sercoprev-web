@@ -4,33 +4,29 @@ import {
   cambiarEstadoHonorario,
   cambiarEstadoTicket,
   crearHonorario,
-  crearTicketCliente,
   responderTicketAdmin,
-  responderTicketCliente,
   type SupportActionState,
 } from '@/app/support-actions'
+import { crearTicketCliente, responderTicketCliente } from '@/app/client-support-actions'
 import { notifyAdmins, notifyCompany } from '@/lib/notifications'
-import { createAdminClient } from '@/utils/supabase/admin'
 import { requireAdmin } from '@/utils/supabase/require-admin'
-import { createClient } from '@/utils/supabase/server'
+import { requireClientCompany } from '@/utils/supabase/require-client'
 
 function clean(value: unknown, maxLength: number) {
   return typeof value === 'string' ? value.trim().replace(/\s+/g, ' ').slice(0, maxLength) : ''
 }
 
 async function currentClientContext() {
-  const sessionClient = await createClient()
-  const { data: { user } } = await sessionClient.auth.getUser()
-  if (!user) return null
-
-  const { data: company } = await sessionClient
-    .from('empresas')
-    .select('id, razon_social, nombre_fantasia, es_admin')
-    .eq('user_id', user.id)
-    .single()
-
-  if (!company || company.es_admin) return null
-  return { user, company, adminClient: createAdminClient() }
+  try {
+    const context = await requireClientCompany()
+    return {
+      user: context.user,
+      company: { id: context.company.id, razon_social: context.company.name, nombre_fantasia: null as string | null },
+      adminClient: context.adminClient,
+    }
+  } catch {
+    return null
+  }
 }
 
 export async function crearHonorarioNotificado(
