@@ -14,8 +14,9 @@ export function ModulePageHeader({ eyebrow, title, description, help, actions }:
           <span className="h-px w-6 bg-[#cfa84b]" />
           <p className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-[#8a681d]">{eyebrow}</p>
         </div>
-        <h1 className="mt-3 inline-flex items-center text-[2rem] font-extrabold tracking-[-0.035em] text-[#10283d] sm:text-[2.35rem]">
-          {title}{help && <InfoTip title={`Acerca de ${title}`}>{help}</InfoTip>}
+        <h1 className="mt-3 flex items-start text-[2rem] font-extrabold tracking-[-0.035em] text-[#10283d] sm:text-[2.35rem]">
+          <span>{title}</span>
+          {help && <InfoTip title={`Acerca de ${title}`} className="mt-1.5 sm:mt-2">{help}</InfoTip>}
         </h1>
         <p className="mt-2.5 max-w-3xl text-[13px] font-medium leading-6 text-slate-500 sm:text-sm">{description}</p>
       </div>
