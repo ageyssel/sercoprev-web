@@ -72,9 +72,9 @@ export async function middleware(request: NextRequest) {
         return redirectWithSessionCookies(adminUrl, response)
       }
       if (!request.cookies.get(STAFF_MFA_CHALLENGE_COOKIE)?.value) {
-        await supabase.auth.signOut()
         const loginUrl = request.nextUrl.clone()
         loginUrl.pathname = '/login'
+        loginUrl.search = ''
         loginUrl.searchParams.set('message', 'La verificación venció. Ingrese nuevamente')
         const redirectResponse = redirectWithSessionCookies(loginUrl, response)
         redirectResponse.cookies.delete(STAFF_MFA_COOKIE)
@@ -84,23 +84,16 @@ export async function middleware(request: NextRequest) {
     }
 
     if (isStaffRoute && !trusted) {
-      if (request.cookies.get(STAFF_MFA_CHALLENGE_COOKIE)?.value) {
-        const verifyUrl = request.nextUrl.clone()
-        verifyUrl.pathname = VERIFY_PATH
-        verifyUrl.search = ''
-        verifyUrl.searchParams.set('message', 'Complete la verificación enviada a su correo')
-        return redirectWithSessionCookies(verifyUrl, response)
-      }
-
-      await supabase.auth.signOut()
-      const loginUrl = request.nextUrl.clone()
-      loginUrl.pathname = '/login'
-      loginUrl.search = ''
-      loginUrl.searchParams.set('message', 'La autorización de seguridad venció. Ingrese nuevamente')
-      const redirectResponse = redirectWithSessionCookies(loginUrl, response)
-      redirectResponse.cookies.delete(STAFF_MFA_COOKIE)
-      redirectResponse.cookies.delete(STAFF_MFA_CHALLENGE_COOKIE)
-      return redirectResponse
+      const verifyUrl = request.nextUrl.clone()
+      verifyUrl.pathname = VERIFY_PATH
+      verifyUrl.search = ''
+      verifyUrl.searchParams.set(
+        'message',
+        request.cookies.get(STAFF_MFA_CHALLENGE_COOKIE)?.value
+          ? 'Complete la verificación enviada a su correo'
+          : 'La autorización de seguridad venció. Ingrese nuevamente',
+      )
+      return redirectWithSessionCookies(verifyUrl, response)
     }
   }
 
