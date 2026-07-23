@@ -79,7 +79,7 @@ function companyScore(company: CompanySelectorOption, rawQuery: string) {
   return Math.max(...fields.map((field) => scoreField(field, query)), 0)
 }
 
-export function CompanySelector({
+export function CompanySearchSelector({
   companies,
   selectedId,
 }: {
@@ -95,12 +95,6 @@ export function CompanySelector({
   const [selectedCompanyId, setSelectedCompanyId] = useState(selectedCompany?.id ?? '')
   const [open, setOpen] = useState(false)
   const [activeIndex, setActiveIndex] = useState(0)
-
-  useEffect(() => {
-    const nextSelected = companies.find((company) => company.id === selectedId) ?? null
-    setSelectedCompanyId(nextSelected?.id ?? '')
-    setQuery(nextSelected ? displayName(nextSelected) : '')
-  }, [companies, selectedId])
 
   useEffect(() => {
     function closeOnOutsidePointer(event: PointerEvent) {
@@ -123,13 +117,10 @@ export function CompanySelector({
       .map(({ company }) => company)
   }, [companies, query])
 
-  useEffect(() => {
-    setActiveIndex(0)
-  }, [query])
-
   function openCompany(company: CompanySelectorOption) {
     setQuery(displayName(company))
     setSelectedCompanyId(company.id)
+    setActiveIndex(0)
     setOpen(false)
     router.push(`${pathname}?empresa=${encodeURIComponent(company.id)}`)
   }
@@ -180,12 +171,14 @@ export function CompanySelector({
             placeholder="Buscar empresa cliente…"
             className="h-11 w-full rounded-xl border border-slate-300 bg-white pl-10 pr-10 text-sm font-bold text-[#17324a] outline-none transition placeholder:font-medium placeholder:text-slate-400 focus:border-[#134b78] focus:ring-4 focus:ring-[#134b78]/10"
             onFocus={(event) => {
+              setActiveIndex(0)
               setOpen(true)
               event.currentTarget.select()
             }}
             onChange={(event) => {
               setQuery(event.target.value)
               setSelectedCompanyId('')
+              setActiveIndex(0)
               setOpen(true)
             }}
             onKeyDown={handleKeyDown}
@@ -196,6 +189,7 @@ export function CompanySelector({
               onClick={() => {
                 setQuery('')
                 setSelectedCompanyId('')
+                setActiveIndex(0)
                 setOpen(true)
               }}
               className="absolute right-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#134b78]/30"
