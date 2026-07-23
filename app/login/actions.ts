@@ -3,6 +3,7 @@
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '../../utils/supabase/server'
+import { resolveUserContext } from '@/utils/supabase/user-context'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -25,20 +26,15 @@ export async function login(formData: FormData) {
     redirect('/login?message=Credenciales incorrectas')
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from('empresas')
-    .select('es_admin, must_change_password')
-    .eq('user_id', data.user.id)
-    .single()
-
-  if (profileError || !profile) {
+  const context = await resolveUserContext(supabase)
+  if (!context) {
     await supabase.auth.signOut()
     redirect('/login?message=La cuenta no está habilitada para el portal')
   }
 
   revalidatePath('/', 'layout')
 
-  if (profile.es_admin) redirect('/admin')
-  if (profile.must_change_password) redirect('/cuenta/cambiar-clave')
+  if (context.kind === 'staff') redirect('/admin')
+  if (context.mustChangePassword) redirect('/cuenta/cambiar-clave')
   redirect('/dashboard')
 }
