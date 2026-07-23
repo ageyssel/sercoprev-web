@@ -150,6 +150,7 @@ jobs:
             supabase/migrations/202607230011_official_indicators_and_parameter_trace.sql
             supabase/migrations/202607230012_automatic_official_data.sql
             supabase/migrations/202607230013_immutable_payroll_and_indicator_history.sql
+            supabase/migrations/202607230014_closed_record_integrity.sql
           )
           for migration in "${migrations[@]}"; do test -f "$migration"; done
 
@@ -217,13 +218,20 @@ jobs:
               ('movimientos_remuneracion_protect_closed_period'),
               ('novedades_remuneraciones_protect_closed_period'),
               ('liquidaciones_protect_closed_period'),
-              ('liquidacion_detalles_protect_closed_period')
+              ('liquidacion_detalles_protect_closed_period'),
+              ('periodos_contables_protect_closed'),
+              ('asientos_contables_protect_posted'),
+              ('movimientos_contables_protect_posted'),
+              ('documentos_tributarios_protect_closed')
             ) as required(trigger_name)
             where not exists (
               select 1 from pg_trigger where not tgisinternal and tgname = required.trigger_name
             );")
           test "$missing_triggers" = '0'
-          echo 'Supabase migrations, official history and payroll immutability protections verified.'
+
+          recorded_protection=$(psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -Atqc "select count(*) from public.sercoprev_schema_migrations where filename = '202607230014_closed_record_integrity.sql'")
+          test "$recorded_protection" = '1'
+          echo 'Supabase migrations, official history, payroll and accounting immutability protections verified.'
 
       - name: Setup Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
@@ -288,20 +296,25 @@ jobs:
             home_status=$(curl -sSL --max-time 20 -o /tmp/home.html -w '%{http_code}' 'https://www.sercoprev.cl/' || true)
             login_status=$(curl -sSL --max-time 20 -o /tmp/login.html -w '%{http_code}' 'https://www.sercoprev.cl/login' || true)
             health_status=$(curl -sSL --max-time 20 -o /tmp/health.json -w '%{http_code}' 'https://www.sercoprev.cl/api/health' || true)
+            version_status=$(curl -sSL --max-time 20 -o /tmp/version.json -w '%{http_code}' 'https://www.sercoprev.cl/api/version' || true)
             if [ "$home_status" = '200' ] \
               && [ "$login_status" = '200' ] \
               && [ "$health_status" = '200' ] \
+              && [ "$version_status" = '200' ] \
               && grep -qi 'SERCOPREV' /tmp/home.html \
               && grep -qi 'Ingrese a su portal' /tmp/login.html \
               && grep -q '"status":"ok"' /tmp/health.json \
+              && grep -q '"release":"2026-07-23-closed-record-integrity-1"' /tmp/health.json \
               && grep -q '"operationalSchema":true' /tmp/health.json \
               && grep -q '"payrollSchema":true' /tmp/health.json \
               && grep -q '"accountingSchema":true' /tmp/health.json \
               && grep -q '"officialIndicatorsSchema":true' /tmp/health.json \
               && grep -q '"officialDataSchema":true' /tmp/health.json \
               && grep -q '"officialDataHistorySchema":true' /tmp/health.json \
+              && grep -q '"closedRecordsProtectionSchema":true' /tmp/health.json \
               && grep -q '"userAccessSchema":true' /tmp/health.json \
-              && grep -q '"documentIntakeSchema":true' /tmp/health.json; then
+              && grep -q '"documentIntakeSchema":true' /tmp/health.json \
+              && grep -q '"release":"2026-07-23-closed-record-integrity-1"' /tmp/version.json; then
               healthy=true
               break
             fi
@@ -310,5 +323,7 @@ jobs:
           echo "GET / => ${home_status:-unknown}"
           echo "GET /login => ${login_status:-unknown}"
           echo "GET /api/health => ${health_status:-unknown}"
+          echo "GET /api/version => ${version_status:-unknown}"
           cat /tmp/health.json 2>/dev/null || true
+          cat /tmp/version.json 2>/dev/null || true
           test "$healthy" = 'true'
