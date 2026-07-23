@@ -1,0 +1,101 @@
+name: Final Production Verification
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    if: github.head_ref == 'ops/final-production-verification'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Verify public routes and operational contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/sercoprev-final
+
+          home_status=$(curl -sSL --max-time 30 -D /tmp/sercoprev-final/home.headers -o /tmp/sercoprev-final/home.html -w '%{http_code}' 'https://www.sercoprev.cl/')
+          login_status=$(curl -sSL --max-time 30 -D /tmp/sercoprev-final/login.headers -o /tmp/sercoprev-final/login.html -w '%{http_code}' 'https://www.sercoprev.cl/login')
+          health_status=$(curl -sSL --max-time 30 -D /tmp/sercoprev-final/health.headers -o /tmp/sercoprev-final/health.json -w '%{http_code}' 'https://www.sercoprev.cl/api/health')
+          version_status=$(curl -sSL --max-time 30 -D /tmp/sercoprev-final/version.headers -o /tmp/sercoprev-final/version.json -w '%{http_code}' 'https://www.sercoprev.cl/api/version')
+          admin_status=$(curl -sS --max-time 30 -D /tmp/sercoprev-final/admin.headers -o /tmp/sercoprev-final/admin.body -w '%{http_code}' 'https://www.sercoprev.cl/admin')
+          protected_sync_status=$(curl -sSL --max-time 30 -D /tmp/sercoprev-final/protected-sync.headers -o /tmp/sercoprev-final/protected-sync.json -w '%{http_code}' -X POST 'https://www.sercoprev.cl/api/internal/sync-official-data')
+
+          cat > /tmp/sercoprev-final/statuses.txt <<EOF
+          home=$home_status
+          login=$login_status
+          health=$health_status
+          version=$version_status
+          admin=$admin_status
+          protected_sync=$protected_sync_status
+          EOF
+          cat /tmp/sercoprev-final/statuses.txt
+
+          test "$home_status" = '200'
+          test "$login_status" = '200'
+          test "$health_status" = '200'
+          test "$version_status" = '200'
+          case "$admin_status" in 301|302|303|307|308) ;; *) echo "Unexpected unauthenticated admin status: $admin_status"; exit 1;; esac
+          test "$protected_sync_status" = '404'
+
+          grep -qi 'SERCOPREV' /tmp/sercoprev-final/home.html
+          grep -qi 'Ingrese a su portal' /tmp/sercoprev-final/login.html
+          grep -qi '^cache-control:.*no-store' /tmp/sercoprev-final/health.headers
+          grep -qi '^cache-control:.*no-store' /tmp/sercoprev-final/version.headers
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path('/tmp/sercoprev-final')
+          health = json.loads((root / 'health.json').read_text())
+          version = json.loads((root / 'version.json').read_text())
+          protected = json.loads((root / 'protected-sync.json').read_text())
+
+          expected_release = '2026-07-23-closed-record-integrity-1'
+          assert health.get('status') == 'ok', health
+          assert health.get('release') == expected_release, health
+          checks = health.get('checks') or {}
+          expected_checks = {
+              'publicSupabaseConfig',
+              'applicationBaseUrl',
+              'database',
+              'operationalSchema',
+              'payrollSchema',
+              'accountingSchema',
+              'officialIndicatorsSchema',
+              'officialDataSchema',
+              'officialDataHistorySchema',
+              'officialDataFreshness',
+              'closedRecordsProtectionSchema',
+              'userAccessSchema',
+              'documentIntakeSchema',
+              'administrator',
+              'documentStorage',
+          }
+          missing = sorted(expected_checks - set(checks))
+          false_checks = sorted(name for name in expected_checks if checks.get(name) is not True)
+          assert not missing, {'missing_checks': missing, 'health': health}
+          assert not false_checks, {'failed_checks': false_checks, 'health': health}
+          assert version == {
+              'service': 'sercoprev-web',
+              'release': expected_release,
+              'runtime': 'cloudflare-workers',
+          }, version
+          assert protected.get('status') == 'not_found', protected
+          print(json.dumps({'release': expected_release, 'checks': checks, 'version': version}, ensure_ascii=False))
+          PY
+
+      - name: Upload final production evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: final-production-evidence
+          path: /tmp/sercoprev-final
+          if-no-files-found: error
+          retention-days: 7
