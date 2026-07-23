@@ -11,6 +11,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
   const context = await resolveUserContext(supabase)
 
   if (!context) redirect('/login')
+  if (context.mustChangePassword) redirect('/cuenta/cambiar-clave')
   if (context.kind !== 'staff') redirect('/dashboard')
 
   return <AdminShell adminName={`${context.displayName} · ${context.role}`}>{children}</AdminShell>
