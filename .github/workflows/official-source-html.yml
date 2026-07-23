@@ -16,29 +16,31 @@ jobs:
       - name: Fetch official source responses
         shell: bash
         run: |
-          set -euo pipefail
+          set -u
           mkdir -p /tmp/official-sources
-          curl -sSL --max-time 60 -A 'SERCOPREV/1.0 (+https://www.sercoprev.cl)' \
-            -D /tmp/official-sources/sii-uf.headers \
-            -o /tmp/official-sources/sii-uf.html \
-            'https://www.sii.cl/valores_y_fechas/uf/uf2026.htm'
-          curl -sSL --max-time 60 -A 'SERCOPREV/1.0 (+https://www.sercoprev.cl)' \
-            -D /tmp/official-sources/sii-utm.headers \
-            -o /tmp/official-sources/sii-utm.html \
-            'https://www.sii.cl/valores_y_fechas/utm/utm2026.htm'
-          curl -sSL --max-time 60 -A 'SERCOPREV/1.0 (+https://www.sercoprev.cl)' \
-            -D /tmp/official-sources/bcentral-home.headers \
-            -o /tmp/official-sources/bcentral-home.html \
-            'https://www.bcentral.cl/es/web/banco-central/inicio/-/details/contenido-general-ver-todos-los-indicadores-diarios'
-          curl -sSL --max-time 60 -A 'SERCOPREV/1.0 (+https://www.sercoprev.cl)' \
-            -D /tmp/official-sources/bcentral-mobile.headers \
-            -o /tmp/official-sources/bcentral-mobile.html \
-            'https://si3.bcentral.cl/Bdemovil/BDE/IndicadoresDiarios'
-          curl -sSL --max-time 60 -A 'SERCOPREV/1.0 (+https://www.sercoprev.cl)' \
-            -D /tmp/official-sources/bcentral-seven.headers \
-            -o /tmp/official-sources/bcentral-seven.html \
-            'https://si3.bcentral.cl/Indicadoressiete/secure/IndicadoresDiarios.aspx?Idioma=es-CL'
-          wc -c /tmp/official-sources/*
+
+          fetch_source() {
+            name="$1"
+            url="$2"
+            set +e
+            curl -sS -L --max-redirs 10 --max-time 60 \
+              -A 'SERCOPREV/1.0 (+https://www.sercoprev.cl)' \
+              -D "/tmp/official-sources/${name}.headers" \
+              -o "/tmp/official-sources/${name}.html" \
+              -w '%{http_code}\n%{url_effective}\n' \
+              "$url" > "/tmp/official-sources/${name}.result"
+            exit_code=$?
+            set -e
+            printf '\nexit_code=%s\n' "$exit_code" >> "/tmp/official-sources/${name}.result"
+          }
+
+          fetch_source sii-uf 'https://www.sii.cl/valores_y_fechas/uf/uf2026.htm'
+          fetch_source sii-utm 'https://www.sii.cl/valores_y_fechas/utm/utm2026.htm'
+          fetch_source bcentral-home 'https://www.bcentral.cl/es/web/banco-central/inicio/-/details/contenido-general-ver-todos-los-indicadores-diarios'
+          fetch_source bcentral-mobile 'https://si3.bcentral.cl/Bdemovil/BDE/IndicadoresDiarios'
+          fetch_source bcentral-seven 'https://si3.bcentral.cl/Indicadoressiete/secure/IndicadoresDiarios.aspx?Idioma=es-CL'
+
+          find /tmp/official-sources -type f -maxdepth 1 -printf '%f %s bytes\n' | sort
 
       - name: Upload official source responses
         uses: actions/upload-artifact@v4
