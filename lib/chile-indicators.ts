@@ -37,6 +37,8 @@ function decodeHtml(value: string) {
     .replace(/&amp;/gi, '&')
     .replace(/&quot;/gi, '"')
     .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&#x([0-9a-f]+);/gi, (_match, code: string) => String.fromCodePoint(Number.parseInt(code, 16)))
+    .replace(/&#(\d+);/g, (_match, code: string) => String.fromCodePoint(Number.parseInt(code, 10)))
     .replace(/\s+/g, ' ')
     .trim()
 }
@@ -58,12 +60,42 @@ function tableRows(html: string) {
   ).filter((row) => row.length > 0)
 }
 
+function monthlyTable(html: string, monthName: string) {
+  const marker = new RegExp(`<div\\b[^>]*\\bid=['"]mes_${monthName}['"][^>]*>`, 'i').exec(html)
+  if (!marker) return ''
+  const section = html.slice(marker.index)
+  const tableEnd = section.search(/<\/table>/i)
+  return tableEnd >= 0 ? section.slice(0, tableEnd + '</table>'.length) : section
+}
+
 function parseUf(html: string, date: Date) {
-  const rows = tableRows(html)
-  const headerIndex = rows.findIndex((row) => normalize(row[0] ?? '') === 'dia' && MONTH_ABBREVIATIONS.every((month) => row.some((cell) => normalize(cell) === month)))
-  if (headerIndex < 0) throw new Error('OFFICIAL_UF_TABLE_NOT_FOUND')
   const day = date.getUTCDate()
-  const monthColumn = date.getUTCMonth() + 1
+  const monthName = MONTH_NAMES[date.getUTCMonth()]
+  const monthSection = monthlyTable(html, monthName)
+
+  if (monthSection) {
+    for (const row of tableRows(monthSection)) {
+      for (let index = 0; index + 1 < row.length; index += 2) {
+        if (Number(row[index]) !== day) continue
+        const value = row[index + 1]?.trim()
+        if (!value) throw new Error('OFFICIAL_UF_NOT_PUBLISHED')
+        return parseChileanNumber(value)
+      }
+    }
+  }
+
+  // Respaldo para formatos históricos del SII que presentan una tabla anual.
+  const rows = tableRows(html)
+  const targetMonth = MONTH_ABBREVIATIONS[date.getUTCMonth()]
+  const headerIndex = rows.findIndex((row) => {
+    const normalized = row.map((cell) => normalize(cell))
+    return normalized[0] === 'dia' && normalized.includes(targetMonth)
+  })
+  if (headerIndex < 0) throw new Error('OFFICIAL_UF_TABLE_NOT_FOUND')
+
+  const header = rows[headerIndex].map((cell) => normalize(cell))
+  const monthColumn = header.indexOf(targetMonth)
+  if (monthColumn < 1) throw new Error('OFFICIAL_UF_MONTH_NOT_FOUND')
   const row = rows.slice(headerIndex + 1).find((candidate) => Number(candidate[0]) === day)
   const value = row?.[monthColumn]
   if (!value) throw new Error('OFFICIAL_UF_NOT_PUBLISHED')
