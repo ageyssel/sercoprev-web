@@ -2,10 +2,9 @@ import { AppIcon } from '@/components/AppIcon'
 import { CompanySelector, ModulePageHeader } from '@/components/admin/ModulePageHeader'
 import { InfoTip } from '@/components/ui/InfoTip'
 import { formatCurrency, formatDate } from '@/lib/format'
-import { getOfficialIndicators } from '@/lib/chile-indicators'
+import { buildMonthlyTaxBrackets, getOfficialIndicators } from '@/lib/chile-indicators'
 import { createClient } from '@/utils/supabase/server'
-import { OfficialPayrollParametersForm } from '@/app/admin/components/OfficialPayrollParametersForm'
-import type { PayrollParameterDefaults } from '@/app/admin/components/PayrollForms'
+import { OfficialPayrollParametersForm, type OfficialPayrollParameterDefaults } from '@/app/admin/components/OfficialPayrollParametersForm'
 
 export const dynamic = 'force-dynamic'
 
@@ -40,7 +39,7 @@ export default async function PayrollParametersPage({ searchParams }: { searchPa
       : 'No fue posible consultar la fuente oficial. Puede utilizar un valor previamente verificado y dejar su fuente registrada.'
   }
 
-  const defaults: PayrollParameterDefaults = indicators ? {
+  const defaults: OfficialPayrollParameterDefaults = indicators ? {
     period: selectedDate.slice(0, 7),
     uf: indicators.uf.valor,
     utm: indicators.utm.valor,
@@ -48,29 +47,30 @@ export default async function PayrollParametersPage({ searchParams }: { searchPa
     utmPeriod: indicators.utm.fecha_referencia,
     sourceUf: indicators.uf.fuente_url,
     sourceUtm: indicators.utm.fuente_url,
-    sourceLabel: `UF y UTM: SII, consulta ${selectedDate}. Verificar además ingreso mínimo, topes, AFP, SIS, AFC e Impuesto Único para ${selectedDate.slice(0, 7)}.`,
-  } : { period: selectedDate.slice(0, 7) }
+    taxBrackets: buildMonthlyTaxBrackets(indicators.utm.valor),
+    sourceLabel: `UF y UTM: SII, consulta ${selectedDate}. Tramos mensuales de Impuesto Único derivados desde la UTM oficial. Verificar además ingreso mínimo, topes, AFP, SIS y AFC para ${selectedDate.slice(0, 7)}.`,
+  } : { period: selectedDate.slice(0, 7), taxBrackets: [] }
 
   return (
     <div className="mx-auto max-w-[1350px]">
-      <ModulePageHeader eyebrow="Remuneraciones · Cumplimiento" title="Parámetros legales" description="Seleccione una fecha y la plataforma obtiene automáticamente la UF diaria y la UTM mensual desde el Servicio de Impuestos Internos. Las fuentes quedan visibles y almacenadas." help="Los parámetros son versionados por mes. Un periodo de remuneraciones sólo puede abrirse cuando existe una configuración para ese mismo mes." actions={<CompanySelector companies={companies} selectedId={selected?.id} />} />
+      <ModulePageHeader eyebrow="Remuneraciones · Cumplimiento" title="Parámetros legales" description="Seleccione una fecha y la plataforma obtiene automáticamente la UF diaria, la UTM mensual y los tramos mensuales del Impuesto Único. Las fuentes quedan visibles y almacenadas." help="Los parámetros son versionados por mes. Un periodo de remuneraciones sólo puede abrirse cuando existe una configuración para ese mismo mes." actions={<CompanySelector companies={companies} selectedId={selected?.id} />} />
 
       <section className="mt-7 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
         <form method="get" className="flex flex-col gap-4 sm:flex-row sm:items-end">
           <input type="hidden" name="empresa" value={selected?.id ?? ''} />
-          <label className="grid flex-1 gap-2 text-sm font-bold text-slate-700"><span className="inline-flex items-center">Fecha de cálculo <InfoTip>La UF es diaria. La UTM corresponde al mes de esta fecha. Para liquidaciones mensuales defina una política interna consistente sobre qué fecha UF se utilizará y consérvela en el parámetro.</InfoTip></span><input type="date" name="fecha" required defaultValue={selectedDate} className="h-11 rounded-xl border border-slate-300 bg-white px-3" /></label>
+          <label className="grid flex-1 gap-2 text-sm font-bold text-slate-700"><span className="inline-flex items-center">Fecha de cálculo <InfoTip>La UF es diaria. La UTM y los tramos del Impuesto Único corresponden al mes de esta fecha. Defina una política consistente sobre la fecha UF usada por cada periodo.</InfoTip></span><input type="date" name="fecha" required defaultValue={selectedDate} className="h-11 rounded-xl border border-slate-300 bg-white px-3" /></label>
           <button className="h-11 rounded-xl bg-[#134b78] px-5 text-sm font-black text-white">Consultar valores oficiales</button>
         </form>
 
         {indicatorError && <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-800">{indicatorError}</p>}
         {indicators && <div className="mt-5 grid gap-4 sm:grid-cols-2">
           <IndicatorCard type="UF" value={indicators.uf.valor} reference={indicators.uf.fecha_referencia} source={indicators.uf.fuente_url} explanation="Unidad de Fomento oficial para el día exacto seleccionado. Se usa para convertir topes y planes expresados en UF a pesos." />
-          <IndicatorCard type="UTM" value={indicators.utm.valor} reference={indicators.utm.fecha_referencia.slice(0, 7)} source={indicators.utm.fuente_url} explanation="Unidad Tributaria Mensual oficial del mes seleccionado. Se usa en cálculos y límites tributarios que la normativa exprese en UTM." />
+          <IndicatorCard type="UTM" value={indicators.utm.valor} reference={indicators.utm.fecha_referencia.slice(0, 7)} source={indicators.utm.fuente_url} explanation="Unidad Tributaria Mensual oficial del mes seleccionado. Además sirve para construir los ocho tramos mensuales del Impuesto Único." />
         </div>}
       </section>
 
       {!selected ? <Empty /> : <>
-        <details open className="mt-7 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6"><summary className="cursor-pointer list-none text-xl font-black text-[#0f2438] [&::-webkit-details-marker]:hidden">Completar configuración del periodo</summary><p className="mt-2 text-sm leading-6 text-slate-500">UF y UTM se precargan automáticamente. Complete y verifique los demás valores antes de guardar.</p><div className="mt-6 border-t border-slate-200 pt-6"><OfficialPayrollParametersForm key={`${selected.id}-${selectedDate}`} companyId={selected.id} defaults={defaults} /></div></details>
+        <details open className="mt-7 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6"><summary className="cursor-pointer list-none text-xl font-black text-[#0f2438] [&::-webkit-details-marker]:hidden">Completar configuración del periodo</summary><p className="mt-2 text-sm leading-6 text-slate-500">UF, UTM e Impuesto Único se precargan automáticamente. Complete y verifique los demás valores antes de guardar.</p><div className="mt-6 border-t border-slate-200 pt-6"><OfficialPayrollParametersForm key={`${selected.id}-${selectedDate}`} companyId={selected.id} defaults={defaults} /></div></details>
 
         <section className="mt-7 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6"><h2 className="text-xl font-black text-[#0f2438]">Historial de parámetros</h2><p className="mt-1 text-sm text-slate-500">Configuraciones específicas de empresa y globales disponibles para los últimos periodos.</p>{error ? <p className="mt-4 text-sm font-bold text-red-700">No fue posible cargar el historial.</p> : <div className="mt-5 grid gap-3">{((parameterRows ?? []) as Parameter[]).map((item) => <article key={item.id} className="flex flex-col gap-3 rounded-2xl border border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-black text-[#17324a]">{item.periodo.slice(0, 7)} · UF {formatCurrency(item.uf)} · UTM {formatCurrency(item.utm)}</p><p className="mt-1 text-xs text-slate-500">Ingreso mínimo {formatCurrency(item.ingreso_minimo)} · actualizado {formatDate(item.updated_at, { dateStyle: 'medium', timeStyle: 'short' })}</p><p className="mt-1 text-xs text-slate-400">{item.fuente || 'Fuente general no registrada'}</p></div><span className={`rounded-full px-3 py-1.5 text-xs font-black ${item.indicadores_verificados_at ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800'}`}>{item.indicadores_verificados_at ? 'Indicadores trazados' : 'Revisar trazabilidad'}</span></article>)}</div>}</section>
       </>}
