@@ -1,15 +1,15 @@
 name: Patch Staff MFA Deploy
 
 on:
-  push:
-    branches: [feature/staff-email-mfa-24h]
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: write
 
 jobs:
   patch:
-    if: github.actor != 'github-actions[bot]'
+    if: github.head_ref == 'feature/staff-email-mfa-24h'
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout branch
