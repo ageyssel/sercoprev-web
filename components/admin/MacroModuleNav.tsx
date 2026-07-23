@@ -35,12 +35,12 @@ export function MacroModuleNav({ module }: { module: ModuleKind }) {
   const label = module === 'accounting' ? 'Contabilidad y rentabilidad' : 'Remuneraciones'
 
   return (
-    <div className="mb-8 rounded-2xl border border-slate-200/90 bg-white/95 p-2 shadow-[0_10px_30px_rgba(15,36,56,0.055)] backdrop-blur">
-      <div className="flex items-center gap-2 border-b border-slate-100 px-2 pb-2 pt-1 md:hidden">
-        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#edf4f9] text-[#174f7a]"><AppIcon name={module === 'accounting' ? 'document' : 'briefcase'} className="h-3.5 w-3.5" /></span>
-        <p className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-slate-500">{label}</p>
+    <div className="mb-6 rounded-[1rem] border border-slate-200/90 bg-white/96 p-1.5 shadow-[0_6px_22px_rgba(15,36,56,0.045)] backdrop-blur">
+      <div className="flex items-center gap-2 border-b border-slate-100 px-2 pb-1.5 pt-1 md:hidden">
+        <span className="flex h-6 w-6 items-center justify-center rounded-md bg-[#edf4f9] text-[#174f7a]"><AppIcon name={module === 'accounting' ? 'document' : 'briefcase'} className="h-3 w-3" /></span>
+        <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">{label}</p>
       </div>
-      <nav aria-label={module === 'accounting' ? 'Secciones de contabilidad' : 'Secciones de remuneraciones'} className="admin-scrollbar flex gap-1 overflow-x-auto pt-2 md:pt-0">
+      <nav aria-label={module === 'accounting' ? 'Secciones de contabilidad' : 'Secciones de remuneraciones'} className="admin-scrollbar flex gap-1 overflow-x-auto pt-1.5 md:pt-0">
         {moduleItems[module].map((item) => {
           const active = item.exact ? pathname === item.href : pathname.startsWith(item.href)
           const href = company ? `${item.href}?empresa=${encodeURIComponent(company)}` : item.href
@@ -49,7 +49,7 @@ export function MacroModuleNav({ module }: { module: ModuleKind }) {
               key={item.href}
               href={href}
               aria-current={active ? 'page' : undefined}
-              className={`group inline-flex min-h-10 shrink-0 items-center gap-2 rounded-xl px-3.5 py-2 text-[11px] font-extrabold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#cfa84b] ${active ? 'bg-[#10283d] text-white shadow-sm' : 'text-slate-600 hover:bg-[#f3f7fa] hover:text-[#10283d]'}`}
+              className={`group inline-flex min-h-9 shrink-0 items-center gap-2 rounded-[0.68rem] px-3 py-1.5 text-[10.5px] font-black transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#cfa84b] ${active ? 'bg-[#10283d] text-white shadow-sm' : 'text-slate-600 hover:bg-[#f3f7fa] hover:text-[#10283d]'}`}
             >
               <AppIcon name={item.icon} className={`h-3.5 w-3.5 ${active ? 'text-[#e6ce89]' : 'text-slate-400 group-hover:text-[#174f7a]'}`} />
               {item.label}
