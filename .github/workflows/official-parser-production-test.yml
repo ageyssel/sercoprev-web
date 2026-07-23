@@ -98,8 +98,9 @@ jobs:
             -H "x-sercoprev-sync-token: $token" \
             -H 'user-agent: SERCOPREV-Parser-Production-Test/1.0' \
             'https://www.sercoprev.cl/api/internal/sync-official-data' || true)
+          printf '%s' "$status" > /tmp/official-sync-status.txt
           echo "Synchronization HTTP status: $status"
-          cat /tmp/official-sync.json
+          cat /tmp/official-sync.json 2>/dev/null || true
           test "$status" = '200'
           python - <<'PY'
           import json
@@ -111,6 +112,17 @@ jobs:
               assert sources.get(source, {}).get('ok') is True, data
           print('SII, PREVIRED and Banco Central synchronized successfully.')
           PY
+
+      - name: Upload synchronization response
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: official-parser-production-sync
+          path: |
+            /tmp/official-sync.json
+            /tmp/official-sync-status.txt
+          if-no-files-found: error
+          retention-days: 1
 
       - name: Verify operational production
         shell: bash
