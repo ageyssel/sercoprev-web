@@ -270,17 +270,21 @@ jobs:
           python - <<'PY'
           import json, os, secrets
           from pathlib import Path
+          token = secrets.token_urlsafe(48)
           values = {
               'SUPABASE_SECRET_KEY': os.environ['SUPABASE_SECRET_KEY'],
-              'OFFICIAL_SYNC_TOKEN': secrets.token_urlsafe(48),
+              'OFFICIAL_SYNC_TOKEN': token,
           }
           for name in ('RESEND_API_KEY', 'WHATSAPP_ACCESS_TOKEN', 'WHATSAPP_PHONE_NUMBER_ID'):
               value = os.environ.get(name, '').strip()
               if value:
                   values[name] = value
-          path = Path('/tmp/sercoprev-cloudflare-secrets.json')
-          path.write_text(json.dumps(values))
-          path.chmod(0o600)
+          secrets_path = Path('/tmp/sercoprev-cloudflare-secrets.json')
+          secrets_path.write_text(json.dumps(values))
+          secrets_path.chmod(0o600)
+          token_path = Path('/tmp/sercoprev-official-sync-token')
+          token_path.write_text(token)
+          token_path.chmod(0o600)
           PY
 
       - name: Deploy code and secrets atomically
@@ -289,6 +293,32 @@ jobs:
           set -euo pipefail
           trap 'rm -f /tmp/sercoprev-cloudflare-secrets.json' EXIT
           npx opennextjs-cloudflare deploy -- --keep-vars --secrets-file /tmp/sercoprev-cloudflare-secrets.json
+
+      - name: Synchronize official data immediately
+        shell: bash
+        run: |
+          set -euo pipefail
+          trap 'rm -f /tmp/sercoprev-official-sync-token' EXIT
+          token=$(cat /tmp/sercoprev-official-sync-token)
+          echo "::add-mask::$token"
+          sync_status=$(curl -sSL --max-time 90 -o /tmp/official-sync.json -w '%{http_code}' \
+            -X POST \
+            -H "x-sercoprev-sync-token: $token" \
+            -H 'user-agent: SERCOPREV-Deploy-Synchronizer/1.0' \
+            'https://www.sercoprev.cl/api/internal/sync-official-data' || true)
+          echo "POST /api/internal/sync-official-data => $sync_status"
+          cat /tmp/official-sync.json 2>/dev/null || true
+          test "$sync_status" = '200'
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          data = json.loads(Path('/tmp/official-sync.json').read_text())
+          assert data.get('status') == 'ok', data
+          sources = {item.get('source'): item for item in data.get('sources', [])}
+          for source in ('SII', 'PREVIRED', 'BANCO_CENTRAL'):
+              assert sources.get(source, {}).get('ok') is True, data
+          print('SII, PREVIRED and Banco Central synchronized successfully.')
+          PY
 
       - name: Verify production
         shell: bash
