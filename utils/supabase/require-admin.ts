@@ -1,23 +1,19 @@
 import { createAdminClient } from '@/utils/supabase/admin'
 import { createClient } from '@/utils/supabase/server'
+import { resolveUserContext, type StaffRole } from '@/utils/supabase/user-context'
 
-export async function requireAdmin() {
+export async function requireAdmin(allowedRoles?: StaffRole[]) {
   const sessionClient = await createClient()
-  const { data: { user }, error: userError } = await sessionClient.auth.getUser()
+  const context = await resolveUserContext(sessionClient)
 
-  if (userError || !user) throw new Error('UNAUTHENTICATED')
-
-  const { data: profile, error: profileError } = await sessionClient
-    .from('empresas')
-    .select('id, es_admin, razon_social')
-    .eq('user_id', user.id)
-    .single()
-
-  if (profileError || !profile?.es_admin) throw new Error('FORBIDDEN')
+  if (!context) throw new Error('UNAUTHENTICATED')
+  if (context.kind !== 'staff' || !context.canWrite) throw new Error('FORBIDDEN')
+  if (allowedRoles && !allowedRoles.includes(context.role)) throw new Error('FORBIDDEN_ROLE')
 
   return {
-    actorUserId: user.id,
-    actorName: profile.razon_social,
+    actorUserId: context.user.id,
+    actorName: context.displayName,
+    actorRole: context.role,
     adminClient: createAdminClient(),
     sessionClient,
   }
