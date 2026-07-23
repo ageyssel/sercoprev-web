@@ -7,10 +7,16 @@ import { AppIcon, type AppIconName } from '@/components/AppIcon'
 const items: Array<{ href: string; label: string; icon: AppIconName; exact?: boolean }> = [
   { href: '/admin', label: 'Resumen', icon: 'dashboard', exact: true },
   { href: '/admin/clientes', label: 'Clientes', icon: 'users' },
+  { href: '/admin/contabilidad', label: 'Contabilidad', icon: 'document' },
+  { href: '/admin/remuneraciones', label: 'Remuneraciones', icon: 'briefcase', exact: true },
+  { href: '/admin/remuneraciones/gestion', label: 'Novedades laborales', icon: 'calendar' },
   { href: '/admin/operaciones', label: 'Obligaciones y tareas', icon: 'tasks' },
-  { href: '/admin/importaciones', label: 'Importaciones', icon: 'upload' },
+  { href: '/admin/documentos-masivos', label: 'Carga documental', icon: 'folder' },
+  { href: '/admin/importaciones', label: 'Importaciones de datos', icon: 'upload' },
   { href: '/admin/cobranza', label: 'Honorarios y cobranza', icon: 'money' },
   { href: '/admin/tickets', label: 'Consultas de clientes', icon: 'message' },
+  { href: '/admin/notificaciones', label: 'Notificaciones', icon: 'inbox' },
+  { href: '/admin/usuarios', label: 'Usuarios y accesos', icon: 'shield' },
   { href: '/admin/leads', label: 'Prospectos', icon: 'lead' },
 ]
 

@@ -2,17 +2,14 @@
 
 import { useActionState } from 'react'
 import { AppIcon } from '@/components/AppIcon'
-import {
-  crearTicketCliente,
-  responderTicketCliente,
-  type SupportActionState,
-} from '@/app/support-actions'
+import { type SupportActionState } from '@/app/support-actions'
+import { crearTicketClienteNotificado, responderTicketClienteNotificado } from '@/app/notified-support-actions'
 
 const initialState: SupportActionState = { status: 'idle', message: '' }
 const textareaClass = 'rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm font-medium text-[#17324a] outline-none transition placeholder:text-slate-400 focus:border-[#134b78] focus:ring-4 focus:ring-[#134b78]/10'
 
 export function NewClientTicketForm() {
-  const [state, action, pending] = useActionState(crearTicketCliente, initialState)
+  const [state, action, pending] = useActionState(crearTicketClienteNotificado, initialState)
   return (
     <form action={action} className="grid gap-4">
       <label className="grid gap-2 text-sm font-bold text-slate-700">Asunto<input name="asunto" required minLength={3} maxLength={180} className="h-11 rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-[#134b78] focus:ring-4 focus:ring-[#134b78]/10" placeholder="Ej. Consulta sobre pago de IVA" /></label>
@@ -28,7 +25,7 @@ export function NewClientTicketForm() {
 }
 
 export function ClientTicketReplyForm({ ticketId }: { ticketId: string }) {
-  const [state, action, pending] = useActionState(responderTicketCliente, initialState)
+  const [state, action, pending] = useActionState(responderTicketClienteNotificado, initialState)
   return (
     <form action={action} className="mt-4 grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
       <input type="hidden" name="ticket_id" value={ticketId} />

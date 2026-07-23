@@ -2,8 +2,9 @@
 
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
-import { createAdminClient } from '@/utils/supabase/admin'
+import { notifyAdmins } from '@/lib/notifications'
 import { createClient } from '@/utils/supabase/server'
+import { requireClientCompany } from '@/utils/supabase/require-client'
 
 export type ClientActionState = {
   status: 'idle' | 'success' | 'error'
@@ -42,17 +43,8 @@ export async function responderSolicitudDocumento(
   formData: FormData,
 ): Promise<ClientActionState> {
   try {
-    const supabase = await createClient()
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
-    if (userError || !user) return { status: 'error', message: 'Su sesión expiró. Ingrese nuevamente.' }
-
-    const { data: empresa, error: companyError } = await supabase
-      .from('empresas')
-      .select('id, es_admin')
-      .eq('user_id', user.id)
-      .single()
-
-    if (companyError || !empresa || empresa.es_admin) return { status: 'error', message: 'Cuenta de empresa inválida.' }
+    const { sessionClient, adminClient, user, company, role } = await requireClientCompany()
+    if (role === 'Solo lectura') return { status: 'error', message: 'Su rol es de solo lectura y no puede cargar archivos.' }
 
     const solicitudId = clean(formData.get('solicitud_id'), 40)
     const file = formData.get('archivo')
@@ -61,20 +53,19 @@ export async function responderSolicitudDocumento(
     if (file.size > MAX_DOCUMENT_SIZE) return { status: 'error', message: 'El archivo no puede superar 7 MB.' }
     if (!ALLOWED_DOCUMENT_TYPES.has(file.type)) return { status: 'error', message: 'Formato no permitido.' }
 
-    const { data: request, error: requestError } = await supabase
+    const { data: request, error: requestError } = await sessionClient
       .from('solicitudes_documentos')
       .select('id, empresa_id, titulo, categoria, periodo, estado')
       .eq('id', solicitudId)
-      .eq('empresa_id', empresa.id)
+      .eq('empresa_id', company.id)
       .single()
 
     if (requestError || !request || ['Aprobado', 'Vencido'].includes(request.estado)) {
       return { status: 'error', message: 'La solicitud ya no está disponible.' }
     }
 
-    const adminClient = createAdminClient()
     const filename = safeFilename(file.name)
-    const storagePath = `${empresa.id}/cliente/${new Date().toISOString().slice(0, 10)}/${crypto.randomUUID()}-${filename}`
+    const storagePath = `${company.id}/cliente/${new Date().toISOString().slice(0, 10)}/${crypto.randomUUID()}-${filename}`
     const { error: uploadError } = await adminClient.storage.from('documentos').upload(storagePath, await file.arrayBuffer(), {
       contentType: file.type,
       cacheControl: '3600',
@@ -83,7 +74,7 @@ export async function responderSolicitudDocumento(
     if (uploadError) throw uploadError
 
     const { data: document, error: insertError } = await adminClient.from('documentos').insert({
-      empresa_id: empresa.id,
+      empresa_id: company.id,
       nombre_original: file.name.slice(0, 255),
       storage_path: storagePath,
       categoria: request.categoria,
@@ -94,6 +85,8 @@ export async function responderSolicitudDocumento(
       mime_type: file.type,
       file_size: file.size,
       visible_cliente: true,
+      fuente_carga: 'Portal cliente',
+      clasificacion_estado: 'Confirmada',
     }).select('id').single()
 
     if (insertError) {
@@ -106,15 +99,38 @@ export async function responderSolicitudDocumento(
 
     await adminClient.from('auditoria_eventos').insert({
       actor_user_id: user.id,
-      empresa_id: empresa.id,
+      empresa_id: company.id,
       accion: 'responder',
       entidad: 'solicitud_documento',
       entidad_id: request.id,
-      metadata: { documento_id: document.id, nombre: file.name },
+      metadata: { documento_id: document.id, nombre: file.name, rol_cliente: role },
+    })
+
+    await notifyAdmins({
+      adminClient,
+      empresaId: company.id,
+      event: 'cliente_cargo_antecedente',
+      subject: `Antecedente recibido: ${request.titulo}`,
+      title: 'Un cliente respondió una solicitud documental',
+      paragraphs: [
+        `${company.name} cargó un archivo para atender una solicitud pendiente.`,
+        'El estado fue actualizado automáticamente a Recibido y el documento ya está disponible para revisión.',
+      ],
+      details: [
+        { label: 'Empresa', value: company.name },
+        { label: 'Solicitud', value: request.titulo },
+        { label: 'Archivo', value: file.name.slice(0, 255) },
+        { label: 'Categoría', value: request.categoria },
+        { label: 'Periodo', value: request.periodo },
+      ],
+      ctaLabel: 'Revisar ficha del cliente',
+      ctaUrl: `${process.env.APP_BASE_URL?.trim() || 'https://www.sercoprev.cl'}/admin/clientes/${company.id}`,
     })
 
     revalidatePath('/dashboard')
-    revalidatePath(`/admin/clientes/${empresa.id}`)
+    revalidatePath(`/admin/clientes/${company.id}`)
+    revalidatePath('/admin/operaciones')
+    revalidatePath('/admin/notificaciones')
     return { status: 'success', message: 'Documento enviado correctamente. SERCOPREV lo revisará.' }
   } catch (error) {
     console.error('Error al responder solicitud documental:', error)

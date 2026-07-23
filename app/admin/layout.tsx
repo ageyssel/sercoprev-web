@@ -2,22 +2,17 @@ import type { ReactNode } from 'react'
 import { redirect } from 'next/navigation'
 import { AdminShell } from '@/components/admin/AdminShell'
 import { createClient } from '@/utils/supabase/server'
+import { resolveUserContext } from '@/utils/supabase/user-context'
 
 export const dynamic = 'force-dynamic'
 
 export default async function AdminLayout({ children }: { children: ReactNode }) {
   const supabase = await createClient()
-  const { data: { user }, error: userError } = await supabase.auth.getUser()
+  const context = await resolveUserContext(supabase)
 
-  if (userError || !user) redirect('/login')
+  if (!context) redirect('/login')
+  if (context.mustChangePassword) redirect('/cuenta/cambiar-clave')
+  if (context.kind !== 'staff') redirect('/dashboard')
 
-  const { data: profile, error: profileError } = await supabase
-    .from('empresas')
-    .select('razon_social, es_admin')
-    .eq('user_id', user.id)
-    .single()
-
-  if (profileError || !profile?.es_admin) redirect('/dashboard')
-
-  return <AdminShell adminName={profile.razon_social}>{children}</AdminShell>
+  return <AdminShell adminName={`${context.displayName} · ${context.role}`}>{children}</AdminShell>
 }

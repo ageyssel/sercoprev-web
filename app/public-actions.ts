@@ -1,5 +1,6 @@
 'use server'
 
+import { notifyAdmins } from '@/lib/notifications'
 import { createAdminClient } from '@/utils/supabase/admin'
 
 export type LeadFormState = {
@@ -19,56 +20,6 @@ const ALLOWED_SERVICES = [
 
 function clean(value: FormDataEntryValue | null, maxLength: number) {
   return typeof value === 'string' ? value.trim().replace(/\s+/g, ' ').slice(0, maxLength) : ''
-}
-
-function escapeHtml(value: string) {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#039;')
-}
-
-async function notifyLead(input: {
-  nombre: string
-  empresa: string
-  email: string
-  telefono: string
-  servicio: string
-  mensaje: string
-}) {
-  const apiKey = process.env.RESEND_API_KEY?.trim()
-  if (!apiKey) return
-
-  const response = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      from: process.env.RESEND_FROM_EMAIL ?? 'SERCOPREV <onboarding@resend.dev>',
-      to: ['contabilidad@sercoprev.cl'],
-      reply_to: input.email,
-      subject: `Nueva solicitud contable: ${input.empresa || input.nombre}`,
-      html: `
-        <div style="font-family:Arial,sans-serif;max-width:640px;margin:auto;color:#17324a">
-          <h1>Nueva solicitud desde sercoprev.cl</h1>
-          <p><strong>Nombre:</strong> ${escapeHtml(input.nombre)}</p>
-          <p><strong>Empresa:</strong> ${escapeHtml(input.empresa || 'No informada')}</p>
-          <p><strong>Correo:</strong> ${escapeHtml(input.email)}</p>
-          <p><strong>Teléfono:</strong> ${escapeHtml(input.telefono)}</p>
-          <p><strong>Servicio:</strong> ${escapeHtml(input.servicio)}</p>
-          <p><strong>Mensaje:</strong><br>${escapeHtml(input.mensaje || 'Sin mensaje adicional')}</p>
-        </div>
-      `,
-    }),
-  })
-
-  if (!response.ok) {
-    console.error('No fue posible notificar el lead por correo:', response.status)
-  }
 }
 
 export async function crearLead(
@@ -109,7 +60,7 @@ export async function crearLead(
       return { status: 'success', message: 'Ya recibimos su solicitud. Nuestro equipo se comunicará con usted.' }
     }
 
-    const { error } = await supabase.from('leads').insert({
+    const { data: lead, error } = await supabase.from('leads').insert({
       nombre,
       empresa: empresa || null,
       rut: rut || null,
@@ -119,14 +70,44 @@ export async function crearLead(
       mensaje: mensaje || null,
       origen: 'Landing SERCOPREV',
       estado: 'Nuevo',
-    })
+    }).select('id').single()
 
     if (error) {
       console.error('No fue posible guardar el lead:', error.message)
       return { status: 'error', message: 'No pudimos registrar la solicitud. Contáctenos por WhatsApp.' }
     }
 
-    await notifyLead({ nombre, empresa, email, telefono, servicio, mensaje }).catch(() => undefined)
+    await notifyAdmins({
+      adminClient: supabase,
+      event: 'nuevo_prospecto',
+      subject: `Nuevo prospecto: ${empresa || nombre}`,
+      title: 'Nueva solicitud desde sercoprev.cl',
+      greeting: 'Equipo SERCOPREV,',
+      paragraphs: [
+        'Se registró un nuevo prospecto desde el formulario público y ya está disponible en el pipeline comercial.',
+        mensaje || 'El prospecto no agregó un mensaje adicional.',
+      ],
+      details: [
+        { label: 'Nombre', value: nombre },
+        { label: 'Empresa', value: empresa || 'No informada' },
+        { label: 'RUT', value: rut || 'No informado' },
+        { label: 'Correo', value: email },
+        { label: 'Teléfono', value: telefono },
+        { label: 'Servicio', value: servicio },
+      ],
+      ctaLabel: 'Revisar prospecto',
+      ctaUrl: `${process.env.APP_BASE_URL?.trim() || 'https://www.sercoprev.cl'}/admin/leads`,
+      replyTo: email,
+    }).catch(() => undefined)
+
+    await supabase.from('auditoria_eventos').insert({
+      actor_user_id: null,
+      empresa_id: null,
+      accion: 'crear',
+      entidad: 'lead',
+      entidad_id: lead.id,
+      metadata: { origen: 'Landing SERCOPREV' },
+    })
 
     return {
       status: 'success',
