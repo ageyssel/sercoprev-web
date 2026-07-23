@@ -1,0 +1,71 @@
+name: Diagnose Supabase Connection
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    env:
+      SUPABASE_DB_URL_SECRET: ${{ secrets.SUPABASE_DB_URL }}
+    steps:
+      - name: Inspect secret shape safely
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          report=$(RAW_URL="${SUPABASE_DB_URL_SECRET:-}" python - <<'PY'
+          import os
+          from urllib.parse import urlparse
+
+          raw = os.environ.get('RAW_URL', '').strip()
+          if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in {'"', "'"}:
+              raw = raw[1:-1].strip()
+
+          starts_postgres = raw.startswith(('postgresql://', 'postgres://'))
+          starts_http = raw.startswith(('https://', 'http://'))
+          host_kind = 'sin_host'
+          has_password = False
+          port = 'sin_puerto'
+          username_kind = 'sin_usuario'
+
+          if starts_postgres or starts_http:
+              parsed = urlparse(raw)
+              host = parsed.hostname or ''
+              has_password = parsed.password is not None and parsed.password != ''
+              port = str(parsed.port) if parsed.port else 'sin_puerto'
+              if host.endswith('.pooler.supabase.com'):
+                  host_kind = 'pooler_supabase'
+              elif host.startswith('db.') and host.endswith('.supabase.co'):
+                  host_kind = 'directo_supabase'
+              elif host.endswith('.supabase.co'):
+                  host_kind = 'api_web_supabase'
+              else:
+                  host_kind = 'otro_host'
+              username = parsed.username or ''
+              if username.startswith('postgres.'):
+                  username_kind = 'usuario_pooler'
+              elif username == 'postgres':
+                  username_kind = 'usuario_directo'
+              elif username:
+                  username_kind = 'otro_usuario'
+
+          print(f'- Es URI PostgreSQL: `{str(starts_postgres).lower()}`')
+          print(f'- Es URL HTTP: `{str(starts_http).lower()}`')
+          print(f'- Tipo de host: `{host_kind}`')
+          print(f'- Incluye contraseña: `{str(has_password).lower()}`')
+          print(f'- Tipo de usuario: `{username_kind}`')
+          print(f'- Puerto: `{port}`')
+          PY
+          )
+          body=$(printf 'Diagnóstico seguro de `SUPABASE_DB_URL` para el despliegue actual:\n\n%s\n\nRun: %s\n\nNo se publicó ningún valor de la credencial.\n' "$report" "$RUN_URL")
+          gh issue comment 13 --repo "$REPOSITORY" --body "$body"
