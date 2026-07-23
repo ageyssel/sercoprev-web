@@ -1,6 +1,7 @@
 import type { SVGProps } from 'react'
 
 export type AppIconName =
+  | 'alert'
   | 'arrow-right'
   | 'briefcase'
   | 'building'
@@ -28,6 +29,7 @@ export type AppIconName =
   | 'x'
 
 const paths: Record<AppIconName, string[]> = {
+  alert: ['M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z', 'M12 7v6', 'M12 17h.01'],
   'arrow-right': ['M5 12h14', 'm13-6 6 6-6 6'],
   briefcase: ['M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2', 'M3 9a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9Z', 'M3 12h18', 'M10 12v2h4v-2'],
   building: ['M4 21h16', 'M6 21V4h12v17', 'M9 8h2', 'M13 8h2', 'M9 12h2', 'M13 12h2', 'M9 16h2', 'M13 16h2'],
@@ -61,17 +63,7 @@ export function AppIcon({
   ...props
 }: SVGProps<SVGSVGElement> & { name: AppIconName }) {
   return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      className={className}
-      {...props}
-    >
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={className} {...props}>
       {paths[name].map((path, index) => <path key={`${name}-${index}`} d={path} />)}
     </svg>
   )
