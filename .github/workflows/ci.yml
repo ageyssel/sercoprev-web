@@ -21,6 +21,9 @@ jobs:
   check:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
+    outputs:
+      typecheck_status: ${{ steps.typecheck.outputs.status }}
+      typecheck_log: ${{ steps.typecheck.outputs.log }}
     env:
       NEXT_PUBLIC_SUPABASE_URL: https://kxrxlygnhukfmdgqhoaz.supabase.co
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_LpXB0WEd-O8Y5ARxeEZ2hQ_xhw3jP1n
@@ -43,7 +46,17 @@ jobs:
         run: npm run lint -- --quiet
 
       - name: Typecheck
-        run: npm run typecheck
+        id: typecheck
+        shell: bash
+        run: |
+          set +e
+          npm run typecheck -- --pretty false > /tmp/sercoprev-typecheck.log 2>&1
+          status=$?
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          encoded=$(base64 -w 0 /tmp/sercoprev-typecheck.log)
+          echo "log=$encoded" >> "$GITHUB_OUTPUT"
+          cat /tmp/sercoprev-typecheck.log
+          exit "$status"
 
       - name: Build Cloudflare Worker
         shell: bash
@@ -153,3 +166,16 @@ jobs:
             exit 1
           fi
           grep -Eq '"status":"(ok|degraded)"' /tmp/sercoprev-health.json
+
+  typecheck-diagnostics:
+    needs: check
+    if: ${{ always() && needs.check.outputs.typecheck_status != '' && needs.check.outputs.typecheck_status != '0' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Print TypeScript errors only
+        env:
+          TYPECHECK_LOG: ${{ needs.check.outputs.typecheck_log }}
+        shell: bash
+        run: |
+          echo "$TYPECHECK_LOG" | base64 -d
+          exit 1
