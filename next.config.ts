@@ -26,6 +26,12 @@ const securityHeaders = [
   { key: 'Strict-Transport-Security', value: 'max-age=31536000; includeSubDomains; preload' },
 ]
 
+const noStoreHeaders = [
+  { key: 'Cache-Control', value: 'private, no-store, no-cache, max-age=0, must-revalidate' },
+  { key: 'Pragma', value: 'no-cache' },
+  { key: 'Expires', value: '0' },
+]
+
 const nextConfig: NextConfig = {
   experimental: {
     serverActions: {
@@ -38,6 +44,22 @@ const nextConfig: NextConfig = {
       {
         source: '/(.*)',
         headers: securityHeaders,
+      },
+      {
+        source: '/login',
+        headers: noStoreHeaders,
+      },
+      {
+        source: '/admin/:path*',
+        headers: noStoreHeaders,
+      },
+      {
+        source: '/dashboard/:path*',
+        headers: noStoreHeaders,
+      },
+      {
+        source: '/cuenta/:path*',
+        headers: noStoreHeaders,
       },
     ]
   },
