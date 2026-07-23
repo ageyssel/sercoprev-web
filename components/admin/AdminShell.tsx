@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import Link from 'next/link'
 import { AdminNav } from '@/components/admin/AdminNav'
+import { OfficialIndicatorSidebar } from '@/components/admin/OfficialIndicatorsDashboard'
 import { BrandLogo } from '@/components/BrandLogo'
 import { AppIcon } from '@/components/AppIcon'
 import { signOut } from '@/app/dashboard/actions'
@@ -26,6 +27,7 @@ export function AdminShell({ children, adminName }: { children: ReactNode; admin
         </div>
 
         <div className="admin-scrollbar -mr-1.5 mt-4 flex-1 overflow-y-auto pr-1.5">
+          <div className="mb-4"><OfficialIndicatorSidebar /></div>
           <AdminNav />
         </div>
 
@@ -57,6 +59,7 @@ export function AdminShell({ children, adminName }: { children: ReactNode; admin
                   <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white text-[#174f7a] shadow-sm"><AppIcon name="shield" className="h-3.5 w-3.5" /></span>
                   <div className="min-w-0"><p className="text-[9px] font-black uppercase tracking-[0.16em] text-slate-500">Sesión</p><p className="mt-0.5 truncate text-[11px] font-bold text-[#10283d]">{adminName}</p></div>
                 </div>
+                <div className="mb-3"><OfficialIndicatorSidebar mobile /></div>
                 <AdminNav mobile />
                 <form action={signOut} className="mt-3 border-t border-slate-100 pt-2">
                   <button type="submit" className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-bold text-red-700 hover:bg-red-50">
