@@ -38,70 +38,45 @@ jobs:
   diagnose-supabase:
     if: github.head_ref == 'ops/mfa-production-diagnostic'
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 5
     env:
       SUPABASE_URL: https://kxrxlygnhukfmdgqhoaz.supabase.co
       SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-
-      - name: Setup Node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci --no-audit --no-fund --silent
-
-      - name: Inspect health dependencies without personal data
+      - name: Inspect Supabase dependencies without personal data
         shell: bash
         run: |
           set -euo pipefail
-          node --input-type=module <<'NODE'
-          import { createClient } from '@supabase/supabase-js'
+          headers=(-H "apikey: $SUPABASE_SECRET_KEY" -H "Authorization: Bearer $SUPABASE_SECRET_KEY" -H 'Accept: application/json')
 
-          const client = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SECRET_KEY, {
-            auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
-          })
-
-          const serializeError = (error) => error ? {
-            code: error.code ?? null,
-            message: error.message ?? null,
-            details: error.details ?? null,
-            hint: error.hint ?? null,
-            status: error.status ?? null,
-          } : null
-
-          const checks = [
-            ['admin_profile', () => client.from('empresas').select('user_id', { count: 'exact' }).eq('es_admin', true).limit(5)],
-            ['lotes_documentales', () => client.from('lotes_documentales').select('id, estado', { count: 'exact' }).limit(1)],
-            ['archivos_ingesta', () => client.from('archivos_ingesta').select('id, estado, confianza', { count: 'exact' }).limit(1)],
-            ['documentos', () => client.from('documentos').select('id, lote_id, clasificacion_estado, fuente_carga', { count: 'exact' }).limit(1)],
-            ['staff_mfa_challenges', () => client.from('staff_mfa_challenges').select('id', { count: 'exact' }).limit(1)],
-            ['staff_mfa_sessions', () => client.from('staff_mfa_sessions').select('id', { count: 'exact' }).limit(1)],
-          ]
-
-          for (const [name, run] of checks) {
-            const result = await run()
-            console.log(JSON.stringify({ name, ok: !result.error, count: result.count ?? null, rows: result.data?.length ?? 0, error: serializeError(result.error) }))
+          check_rest() {
+            local name="$1"
+            local path="$2"
+            local body="/tmp/${name}.json"
+            local status
+            status=$(curl -sS --max-time 30 "${headers[@]}" -o "$body" -w '%{http_code}' "$SUPABASE_URL/rest/v1/$path" || true)
+            local error
+            error=$(jq -c 'if type == "object" and (.message or .code) then {code:(.code // null),message:(.message // null),details:(.details // null),hint:(.hint // null)} else null end' "$body" 2>/dev/null || echo null)
+            echo "$name status=$status error=$error"
           }
 
-          const adminProfile = await client.from('empresas').select('user_id').eq('es_admin', true).limit(1).maybeSingle()
-          if (adminProfile.data?.user_id) {
-            const authUser = await client.auth.admin.getUserById(adminProfile.data.user_id)
-            console.log(JSON.stringify({ name: 'administrator_auth_lookup', ok: !authUser.error && Boolean(authUser.data.user), error: serializeError(authUser.error) }))
-          } else {
-            console.log(JSON.stringify({ name: 'administrator_auth_lookup', ok: false, reason: 'NO_ADMIN_PROFILE', error: serializeError(adminProfile.error) }))
-          }
+          check_rest admin_profile 'empresas?select=user_id&es_admin=eq.true&limit=1'
+          check_rest lotes_documentales 'lotes_documentales?select=id,estado&limit=1'
+          check_rest archivos_ingesta 'archivos_ingesta?select=id,estado,confianza&limit=1'
+          check_rest documentos 'documentos?select=id,lote_id,clasificacion_estado,fuente_carga&limit=1'
+          check_rest staff_mfa_challenges 'staff_mfa_challenges?select=id&limit=1'
+          check_rest staff_mfa_sessions 'staff_mfa_sessions?select=id&limit=1'
 
-          const buckets = await client.storage.listBuckets()
-          console.log(JSON.stringify({
-            name: 'storage_buckets',
-            ok: !buckets.error,
-            documentosPrivate: Boolean(buckets.data?.some((bucket) => bucket.id === 'documentos' && bucket.public === false)),
-            bucketCount: buckets.data?.length ?? 0,
-            error: serializeError(buckets.error),
-          }))
-          NODE
+          admin_user_id=$(jq -r 'if type == "array" and length > 0 then .[0].user_id // empty else empty end' /tmp/admin_profile.json)
+          if [ -n "$admin_user_id" ]; then
+            auth_status=$(curl -sS --max-time 30 "${headers[@]}" -o /tmp/auth-user.json -w '%{http_code}' "$SUPABASE_URL/auth/v1/admin/users/$admin_user_id" || true)
+            auth_error=$(jq -c 'if (.message or .msg or .error_description) then {message:(.message // .msg // .error_description)} else null end' /tmp/auth-user.json 2>/dev/null || echo null)
+            echo "administrator_auth_lookup status=$auth_status error=$auth_error"
+          else
+            echo 'administrator_auth_lookup status=none error={"message":"NO_ADMIN_PROFILE"}'
+          fi
+
+          storage_status=$(curl -sS --max-time 30 "${headers[@]}" -o /tmp/buckets.json -w '%{http_code}' "$SUPABASE_URL/storage/v1/bucket" || true)
+          storage_private=$(jq -r 'if type == "array" then any(.[]; .id == "documentos" and .public == false) else false end' /tmp/buckets.json 2>/dev/null || echo false)
+          storage_error=$(jq -c 'if type == "object" and (.message or .error) then {message:(.message // .error)} else null end' /tmp/buckets.json 2>/dev/null || echo null)
+          echo "storage_buckets status=$storage_status documentosPrivate=$storage_private error=$storage_error"
