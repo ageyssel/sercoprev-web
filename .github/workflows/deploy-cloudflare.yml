@@ -300,7 +300,7 @@ jobs:
           for attempt in $(seq 1 40); do
             home_status=$(curl -sSL --max-time 20 -o /tmp/home.html -w '%{http_code}' 'https://www.sercoprev.cl/' || true)
             login_status=$(curl -sSL --max-time 20 -o /tmp/login.html -w '%{http_code}' 'https://www.sercoprev.cl/login' || true)
-            verify_status=$(curl -sSL --max-time 20 -o /tmp/verify.html -w '%{http_code}' 'https://www.sercoprev.cl/login/verificar-codigo' || true)
+            verify_status=$(curl -sS --max-time 20 -o /tmp/verify.html -w '%{http_code}' 'https://www.sercoprev.cl/login/verificar-codigo' || true)
             health_status=$(curl -sSL --max-time 20 -o /tmp/health.json -w '%{http_code}' 'https://www.sercoprev.cl/api/health' || true)
             version_status=$(curl -sSL --max-time 20 -o /tmp/version.json -w '%{http_code}' 'https://www.sercoprev.cl/api/version' || true)
             if [ "$home_status" = '200' ] \
@@ -311,7 +311,7 @@ jobs:
               && grep -qi 'SERCOPREV' /tmp/home.html \
               && grep -qi 'Ingrese a su portal' /tmp/login.html \
               && grep -q '"status":"ok"' /tmp/health.json \
-              && grep -q '"release":"2026-07-23-staff-email-mfa-1"' /tmp/health.json \
+              && grep -q '"release":"2026-07-23-staff-email-mfa-health-1"' /tmp/health.json \
               && grep -q '"operationalSchema":true' /tmp/health.json \
               && grep -q '"payrollSchema":true' /tmp/health.json \
               && grep -q '"accountingSchema":true' /tmp/health.json \
@@ -322,8 +322,9 @@ jobs:
               && grep -q '"closedRecordsProtectionSchema":true' /tmp/health.json \
               && grep -q '"userAccessSchema":true' /tmp/health.json \
               && grep -q '"staffMfaSchema":true' /tmp/health.json \
+              && grep -q '"staffMfaEmailDeliveryConfigured":true' /tmp/health.json \
               && grep -q '"documentIntakeSchema":true' /tmp/health.json \
-              && grep -q '"release":"2026-07-23-staff-email-mfa-1"' /tmp/version.json; then
+              && grep -q '"release":"2026-07-23-staff-email-mfa-health-1"' /tmp/version.json; then
               healthy=true
               break
             fi
