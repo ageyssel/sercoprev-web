@@ -1,0 +1,73 @@
+name: Final MFA Health V2 Verification
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    if: github.head_ref == 'ops/final-mfa-health-v2-verification'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Verify final production contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/mfa-v2-evidence
+          healthy=false
+
+          for attempt in $(seq 1 60); do
+            home_status=$(curl -sSL --max-time 20 -D /tmp/mfa-v2-evidence/home.headers -o /tmp/mfa-v2-evidence/home.html -w '%{http_code}' 'https://www.sercoprev.cl/' || true)
+            login_status=$(curl -sSL --max-time 20 -D /tmp/mfa-v2-evidence/login.headers -o /tmp/mfa-v2-evidence/login.html -w '%{http_code}' 'https://www.sercoprev.cl/login' || true)
+            verify_status=$(curl -sS --max-time 20 -D /tmp/mfa-v2-evidence/verify.headers -o /tmp/mfa-v2-evidence/verify.html -w '%{http_code}' 'https://www.sercoprev.cl/login/verificar-codigo' || true)
+            health_status=$(curl -sS --max-time 20 -D /tmp/mfa-v2-evidence/health.headers -o /tmp/mfa-v2-evidence/health.json -w '%{http_code}' 'https://www.sercoprev.cl/api/health' || true)
+            version_status=$(curl -sS --max-time 20 -D /tmp/mfa-v2-evidence/version.headers -o /tmp/mfa-v2-evidence/version.json -w '%{http_code}' 'https://www.sercoprev.cl/api/version' || true)
+
+            if [ "$home_status" = '200' ] \
+              && [ "$login_status" = '200' ] \
+              && { [ "$verify_status" = '302' ] || [ "$verify_status" = '307' ] || [ "$verify_status" = '308' ]; } \
+              && [ "$health_status" = '200' ] \
+              && [ "$version_status" = '200' ] \
+              && grep -qi 'SERCOPREV' /tmp/mfa-v2-evidence/home.html \
+              && grep -qi 'Personal interno' /tmp/mfa-v2-evidence/login.html \
+              && grep -q '"status":"ok"' /tmp/mfa-v2-evidence/health.json \
+              && grep -q '"release":"2026-07-23-staff-email-mfa-health-2"' /tmp/mfa-v2-evidence/health.json \
+              && grep -q '"staffMfaSchema":true' /tmp/mfa-v2-evidence/health.json \
+              && grep -q '"staffMfaEmailDeliveryConfigured":true' /tmp/mfa-v2-evidence/health.json \
+              && grep -q '"documentIntakeSchema":true' /tmp/mfa-v2-evidence/health.json \
+              && grep -q '"administrator":true' /tmp/mfa-v2-evidence/health.json \
+              && grep -q '"documentStorage":true' /tmp/mfa-v2-evidence/health.json \
+              && grep -q '"release":"2026-07-23-staff-email-mfa-health-2"' /tmp/mfa-v2-evidence/version.json; then
+              healthy=true
+              break
+            fi
+            sleep 5
+          done
+
+          cat > /tmp/mfa-v2-evidence/statuses.txt <<EOF
+          home=$home_status
+          login=$login_status
+          verify=$verify_status
+          health=$health_status
+          version=$version_status
+          healthy=$healthy
+          EOF
+
+          cat /tmp/mfa-v2-evidence/statuses.txt
+          cat /tmp/mfa-v2-evidence/health.json 2>/dev/null || true
+          echo
+          cat /tmp/mfa-v2-evidence/version.json 2>/dev/null || true
+          test "$healthy" = 'true'
+
+      - name: Upload final evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: final-mfa-health-v2-evidence
+          path: /tmp/mfa-v2-evidence
+          if-no-files-found: warn
+          retention-days: 7
