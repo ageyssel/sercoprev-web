@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { AppIcon } from '@/components/AppIcon'
 import { ModulePageHeader } from '@/components/admin/ModulePageHeader'
+import { OfficialIndicatorsPanel } from '@/components/admin/OfficialIndicatorsDashboard'
 import { MetricCard } from '@/components/ui/MetricCard'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { formatDate, dueDateLabel } from '@/lib/format'
@@ -102,6 +103,8 @@ export default async function AdminPage() {
         <MetricCard label="Documentos pendientes" value={requestsCount.count ?? 0} detail="Solicitudes activas" icon="upload" tone="gold" />
         <MetricCard label="Prospectos abiertos" value={leadsCount.count ?? 0} detail="Solicitudes del landing" icon="lead" tone="green" />
       </section>
+
+      <OfficialIndicatorsPanel />
 
       <div className="mt-6 grid gap-5 xl:grid-cols-[1.08fr_.92fr]">
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
