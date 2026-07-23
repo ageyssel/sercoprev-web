@@ -4,8 +4,10 @@ import { getApplicationBaseUrl, getSupabasePublicConfig } from '@/utils/supabase
 
 export const dynamic = 'force-dynamic'
 
-const RELEASE = '2026-07-23-staff-email-mfa-1'
+const RELEASE = '2026-07-23-staff-email-mfa-health-1'
 const OFFICIAL_DATA_MAX_AGE_MS = 48 * 60 * 60 * 1000
+
+type QueryResult = { error: unknown }
 
 function currentChilePeriod() {
   const parts = new Intl.DateTimeFormat('en-US', {
@@ -23,49 +25,38 @@ function recentlyObtained(value: string | null | undefined) {
   return Number.isFinite(timestamp) && timestamp >= Date.now() - OFFICIAL_DATA_MAX_AGE_MS
 }
 
+function allSucceeded(results: QueryResult[]) {
+  return results.every((result) => !result.error)
+}
+
+async function safeCheck(name: string, check: () => Promise<boolean>) {
+  try {
+    return await check()
+  } catch (error) {
+    console.error(`HEALTH_${name}_FAILED`, error)
+    return false
+  }
+}
+
 export async function GET() {
-  let publicSupabaseConfig = false
-  let applicationBaseUrl = false
-  let database = false
-  let operationalSchema = false
-  let payrollSchema = false
-  let accountingSchema = false
-  let officialIndicatorsSchema = false
-  let officialDataSchema = false
-  let officialDataHistorySchema = false
-  let officialDataFreshness = false
-  let closedRecordsProtectionSchema = false
-  let userAccessSchema = false
-  let staffMfaSchema = false
-  let documentIntakeSchema = false
-  let administrator = false
-  let documentStorage = false
-
-  try {
+  const publicSupabaseConfig = await safeCheck('PUBLIC_SUPABASE_CONFIG', async () => {
     getSupabasePublicConfig()
-    publicSupabaseConfig = true
-  } catch {
-    publicSupabaseConfig = false
-  }
+    return true
+  })
 
-  try {
+  const applicationBaseUrl = await safeCheck('APPLICATION_BASE_URL', async () => {
     getApplicationBaseUrl()
-    applicationBaseUrl = true
-  } catch {
-    applicationBaseUrl = false
-  }
+    return true
+  })
 
-  try {
+  const database = await safeCheck('DATABASE', async () => {
+    const { error } = await createAdminClient().from('empresas').select('id').limit(1)
+    return !error
+  })
+
+  const operationalSchema = await safeCheck('OPERATIONAL_SCHEMA', async () => {
     const supabase = createAdminClient()
-    const { data: adminProfile, error: profileError } = await supabase.from('empresas').select('user_id').eq('es_admin', true).limit(1).maybeSingle()
-    database = !profileError
-
-    if (!profileError && adminProfile?.user_id) {
-      const { data: authUser, error: authError } = await supabase.auth.admin.getUserById(adminProfile.user_id)
-      administrator = !authError && Boolean(authUser.user)
-    }
-
-    const operationalChecks = await Promise.all([
+    const results = await Promise.all([
       supabase.from('empresas').select('id, estado_cliente, contador_asignado, plan_servicio').limit(1),
       supabase.from('leads').select('id').limit(1),
       supabase.from('obligaciones').select('id').limit(1),
@@ -80,9 +71,12 @@ export async function GET() {
       supabase.from('ticket_mensajes').select('id').limit(1),
       supabase.from('contactos_empresa').select('id').limit(1),
     ])
-    operationalSchema = operationalChecks.every((result) => !result.error)
+    return allSucceeded(results)
+  })
 
-    const payrollChecks = await Promise.all([
+  const payrollSchema = await safeCheck('PAYROLL_SCHEMA', async () => {
+    const supabase = createAdminClient()
+    const results = await Promise.all([
       supabase.from('trabajadores').select('id, empresa_id, estado').limit(1),
       supabase.from('contratos_trabajo').select('id, trabajador_id, estado').limit(1),
       supabase.from('parametros_remuneraciones').select('id, periodo, uf_fecha, utm_periodo, fuente_uf, fuente_utm, indicadores_verificados_at, fuentes_automaticas, parametros_automaticos_at').limit(1),
@@ -94,52 +88,12 @@ export async function GET() {
       supabase.from('licencias_medicas').select('id, estado').limit(1),
       supabase.from('finiquitos').select('id, estado').limit(1),
     ])
-    payrollSchema = payrollChecks.every((result) => !result.error)
+    return allSucceeded(results)
+  })
 
-    const indicatorChecks = await Promise.all([
-      supabase.from('indicadores_oficiales').select('id, tipo, fecha_referencia, valor, fuente_url, obtenido_at').limit(1),
-      supabase.from('parametros_remuneraciones').select('id, uf_fecha, utm_periodo, fuente_uf, fuente_utm, indicadores_verificados_at').limit(1),
-    ])
-    officialIndicatorsSchema = indicatorChecks.every((result) => !result.error)
-
-    const officialDataChecks = await Promise.all([
-      supabase.from('datos_oficiales').select('id, fuente_codigo, codigo, periodo, valor, unidad, fuente_url, obtenido_at').limit(1),
-      supabase.from('parametros_remuneraciones').select('id, fuentes_automaticas, parametros_automaticos_at').limit(1),
-    ])
-    officialDataSchema = officialDataChecks.every((result) => !result.error)
-
-    const historyChecks = await Promise.all([
-      supabase.from('datos_oficiales_versiones').select('id, fuente_codigo, codigo, fecha_referencia, periodo, valor, unidad, fuente_url, obtenido_at').limit(1),
-      supabase.from('sercoprev_schema_migrations').select('filename').eq('filename', '202607230013_immutable_payroll_and_indicator_history.sql').limit(1),
-    ])
-    officialDataHistorySchema = historyChecks.every((result) => !result.error)
-
-    const currentPeriod = currentChilePeriod()
-    const [siiFreshness, previredFreshness, bancoFreshness] = await Promise.all([
-      supabase.from('indicadores_oficiales').select('tipo, obtenido_at').in('tipo', ['UF', 'UTM']).order('obtenido_at', { ascending: false }).limit(10),
-      supabase.from('datos_oficiales').select('codigo, obtenido_at').eq('fuente_codigo', 'PREVIRED').eq('periodo', currentPeriod).limit(100),
-      supabase.from('datos_oficiales').select('codigo, obtenido_at').eq('fuente_codigo', 'BANCO_CENTRAL').eq('periodo', currentPeriod).limit(100),
-    ])
-    const siiRows = siiFreshness.data ?? []
-    const previredRows = previredFreshness.data ?? []
-    const bancoRows = bancoFreshness.data ?? []
-    officialDataFreshness = !siiFreshness.error
-      && !previredFreshness.error
-      && !bancoFreshness.error
-      && ['UF', 'UTM'].every((type) => siiRows.some((row) => row.tipo === type && recentlyObtained(row.obtenido_at)))
-      && previredRows.some((row) => row.codigo === 'INGRESO_MINIMO_GENERAL' && recentlyObtained(row.obtenido_at))
-      && previredRows.some((row) => row.codigo.startsWith('TASA_AFP_') && recentlyObtained(row.obtenido_at))
-      && bancoRows.some((row) => row.codigo === 'DOLAR_OBSERVADO' && recentlyObtained(row.obtenido_at))
-      && bancoRows.some((row) => row.codigo === 'EURO' && recentlyObtained(row.obtenido_at))
-
-    const { data: protectionMigration, error: protectionError } = await supabase
-      .from('sercoprev_schema_migrations')
-      .select('filename')
-      .eq('filename', '202607230014_closed_record_integrity.sql')
-      .maybeSingle()
-    closedRecordsProtectionSchema = !protectionError && protectionMigration?.filename === '202607230014_closed_record_integrity.sql'
-
-    const accountingChecks = await Promise.all([
+  const accountingSchema = await safeCheck('ACCOUNTING_SCHEMA', async () => {
+    const supabase = createAdminClient()
+    const results = await Promise.all([
       supabase.from('plan_cuentas').select('id, codigo').limit(1),
       supabase.from('periodos_contables').select('id, periodo').limit(1),
       supabase.from('asientos_contables').select('id, numero, estado').limit(1),
@@ -150,50 +104,113 @@ export async function GET() {
       supabase.from('conciliaciones_bancarias').select('id').limit(1),
       supabase.from('importaciones_contables').select('id, tipo, estado').limit(1),
     ])
-    accountingSchema = accountingChecks.every((result) => !result.error)
+    return allSucceeded(results)
+  })
 
-    const userChecks = await Promise.all([
+  const officialIndicatorsSchema = await safeCheck('OFFICIAL_INDICATORS_SCHEMA', async () => {
+    const supabase = createAdminClient()
+    return allSucceeded(await Promise.all([
+      supabase.from('indicadores_oficiales').select('id, tipo, fecha_referencia, valor, fuente_url, obtenido_at').limit(1),
+      supabase.from('parametros_remuneraciones').select('id, uf_fecha, utm_periodo, fuente_uf, fuente_utm, indicadores_verificados_at').limit(1),
+    ]))
+  })
+
+  const officialDataSchema = await safeCheck('OFFICIAL_DATA_SCHEMA', async () => {
+    const supabase = createAdminClient()
+    return allSucceeded(await Promise.all([
+      supabase.from('datos_oficiales').select('id, fuente_codigo, codigo, periodo, valor, unidad, fuente_url, obtenido_at').limit(1),
+      supabase.from('parametros_remuneraciones').select('id, fuentes_automaticas, parametros_automaticos_at').limit(1),
+    ]))
+  })
+
+  const officialDataHistorySchema = await safeCheck('OFFICIAL_DATA_HISTORY_SCHEMA', async () => {
+    const supabase = createAdminClient()
+    return allSucceeded(await Promise.all([
+      supabase.from('datos_oficiales_versiones').select('id, fuente_codigo, codigo, fecha_referencia, periodo, valor, unidad, fuente_url, obtenido_at').limit(1),
+      supabase.from('sercoprev_schema_migrations').select('filename').eq('filename', '202607230013_immutable_payroll_and_indicator_history.sql').limit(1),
+    ]))
+  })
+
+  const officialDataFreshness = await safeCheck('OFFICIAL_DATA_FRESHNESS', async () => {
+    const supabase = createAdminClient()
+    const currentPeriod = currentChilePeriod()
+    const [sii, previred, banco] = await Promise.all([
+      supabase.from('indicadores_oficiales').select('tipo, obtenido_at').in('tipo', ['UF', 'UTM']).order('obtenido_at', { ascending: false }).limit(10),
+      supabase.from('datos_oficiales').select('codigo, obtenido_at').eq('fuente_codigo', 'PREVIRED').eq('periodo', currentPeriod).limit(100),
+      supabase.from('datos_oficiales').select('codigo, obtenido_at').eq('fuente_codigo', 'BANCO_CENTRAL').eq('periodo', currentPeriod).limit(100),
+    ])
+    if (sii.error || previred.error || banco.error) return false
+    const siiRows = sii.data ?? []
+    const previredRows = previred.data ?? []
+    const bancoRows = banco.data ?? []
+    return ['UF', 'UTM'].every((type) => siiRows.some((row) => row.tipo === type && recentlyObtained(row.obtenido_at)))
+      && previredRows.some((row) => row.codigo === 'INGRESO_MINIMO_GENERAL' && recentlyObtained(row.obtenido_at))
+      && previredRows.some((row) => row.codigo.startsWith('TASA_AFP_') && recentlyObtained(row.obtenido_at))
+      && bancoRows.some((row) => row.codigo === 'DOLAR_OBSERVADO' && recentlyObtained(row.obtenido_at))
+      && bancoRows.some((row) => row.codigo === 'EURO' && recentlyObtained(row.obtenido_at))
+  })
+
+  const closedRecordsProtectionSchema = await safeCheck('CLOSED_RECORDS_PROTECTION_SCHEMA', async () => {
+    const { data, error } = await createAdminClient()
+      .from('sercoprev_schema_migrations')
+      .select('filename')
+      .eq('filename', '202607230014_closed_record_integrity.sql')
+      .maybeSingle()
+    return !error && data?.filename === '202607230014_closed_record_integrity.sql'
+  })
+
+  const userAccessSchema = await safeCheck('USER_ACCESS_SCHEMA', async () => {
+    const supabase = createAdminClient()
+    return allSucceeded(await Promise.all([
       supabase.from('usuarios_organizacion').select('id, rol, activo, must_change_password').limit(1),
       supabase.from('empresa_usuarios').select('id, empresa_id, rol, activo, must_change_password').limit(1),
-    ])
-    userAccessSchema = userChecks.every((result) => !result.error)
+    ]))
+  })
 
-    const [challengeCheck, sessionCheck, mfaMigration] = await Promise.all([
+  const staffMfaSchema = await safeCheck('STAFF_MFA_SCHEMA', async () => {
+    const supabase = createAdminClient()
+    const [challenge, session, migration] = await Promise.all([
       supabase.from('staff_mfa_challenges').select('id, user_id, expires_at, consumed_at, attempts').limit(1),
       supabase.from('staff_mfa_sessions').select('id, user_id, expires_at, revoked_at').limit(1),
       supabase.from('sercoprev_schema_migrations').select('filename').eq('filename', '202607230015_staff_email_mfa.sql').maybeSingle(),
     ])
-    staffMfaSchema = !challengeCheck.error
-      && !sessionCheck.error
-      && !mfaMigration.error
-      && mfaMigration.data?.filename === '202607230015_staff_email_mfa.sql'
+    return !challenge.error
+      && !session.error
+      && !migration.error
+      && migration.data?.filename === '202607230015_staff_email_mfa.sql'
+  })
 
-    const intakeChecks = await Promise.all([
+  const staffMfaEmailDeliveryConfigured = Boolean(process.env.RESEND_API_KEY?.trim())
+
+  const documentIntakeSchema = await safeCheck('DOCUMENT_INTAKE_SCHEMA', async () => {
+    const supabase = createAdminClient()
+    return allSucceeded(await Promise.all([
       supabase.from('lotes_documentales').select('id, estado').limit(1),
       supabase.from('archivos_ingesta').select('id, estado, confianza').limit(1),
       supabase.from('documentos').select('id, lote_id, clasificacion_estado, fuente_carga').limit(1),
-    ])
-    documentIntakeSchema = intakeChecks.every((result) => !result.error)
+    ]))
+  })
 
-    const { data: buckets, error: bucketError } = await supabase.storage.listBuckets()
-    documentStorage = !bucketError && Boolean(buckets?.some((bucket) => bucket.id === 'documentos' && bucket.public === false))
-  } catch (error) {
-    console.error('HEALTH_CHECK_FAILED', error)
-    database = false
-    operationalSchema = false
-    payrollSchema = false
-    accountingSchema = false
-    officialIndicatorsSchema = false
-    officialDataSchema = false
-    officialDataHistorySchema = false
-    officialDataFreshness = false
-    closedRecordsProtectionSchema = false
-    userAccessSchema = false
-    staffMfaSchema = false
-    documentIntakeSchema = false
-    administrator = false
-    documentStorage = false
-  }
+  const administrator = await safeCheck('ADMINISTRATOR', async () => {
+    const directory = createAdminClient()
+    const [directAdmin, staffAdmin] = await Promise.all([
+      directory.from('empresas').select('user_id').eq('es_admin', true).not('user_id', 'is', null).limit(1),
+      directory.from('usuarios_organizacion').select('user_id').eq('activo', true).in('rol', ['Superadministrador', 'Administrador']).limit(1),
+    ])
+    if (directAdmin.error || staffAdmin.error) return false
+    const userId = directAdmin.data?.[0]?.user_id ?? staffAdmin.data?.[0]?.user_id
+    if (!userId) return false
+
+    // Se usa un cliente separado para que una incidencia de Auth nunca altere
+    // las cabeceras o el estado de los controles de datos y Storage.
+    const { data, error } = await createAdminClient().auth.admin.getUserById(userId)
+    return !error && Boolean(data.user)
+  })
+
+  const documentStorage = await safeCheck('DOCUMENT_STORAGE', async () => {
+    const { data, error } = await createAdminClient().storage.listBuckets()
+    return !error && Boolean(data?.some((bucket) => bucket.id === 'documentos' && bucket.public === false))
+  })
 
   const checks = {
     publicSupabaseConfig,
@@ -209,6 +226,7 @@ export async function GET() {
     closedRecordsProtectionSchema,
     userAccessSchema,
     staffMfaSchema,
+    staffMfaEmailDeliveryConfigured,
     documentIntakeSchema,
     administrator,
     documentStorage,
