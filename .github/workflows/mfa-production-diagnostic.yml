@@ -1,0 +1,36 @@
+name: MFA Production Diagnostic
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    if: github.head_ref == 'ops/mfa-production-diagnostic'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Read SERCOPREV production endpoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          home_status=$(curl -sSL --max-time 30 -o /tmp/home.html -w '%{http_code}' 'https://www.sercoprev.cl/' || true)
+          login_status=$(curl -sSL --max-time 30 -o /tmp/login.html -w '%{http_code}' 'https://www.sercoprev.cl/login' || true)
+          verify_status=$(curl -sS --max-time 30 -D /tmp/verify.headers -o /tmp/verify.html -w '%{http_code}' 'https://www.sercoprev.cl/login/verificar-codigo' || true)
+          health_status=$(curl -sSL --max-time 30 -o /tmp/health.json -w '%{http_code}' 'https://www.sercoprev.cl/api/health' || true)
+          version_status=$(curl -sSL --max-time 30 -o /tmp/version.json -w '%{http_code}' 'https://www.sercoprev.cl/api/version' || true)
+          echo "home=$home_status login=$login_status verify=$verify_status health=$health_status version=$version_status"
+          echo 'HEALTH_BODY_BEGIN'
+          cat /tmp/health.json || true
+          echo
+          echo 'HEALTH_BODY_END'
+          echo 'VERSION_BODY_BEGIN'
+          cat /tmp/version.json || true
+          echo
+          echo 'VERSION_BODY_END'
+          echo 'VERIFY_HEADERS_BEGIN'
+          cat /tmp/verify.headers || true
+          echo 'VERIFY_HEADERS_END'
