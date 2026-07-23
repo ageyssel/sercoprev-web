@@ -7,6 +7,7 @@ export async function requireAdmin(allowedRoles?: StaffRole[]) {
   const context = await resolveUserContext(sessionClient)
 
   if (!context) throw new Error('UNAUTHENTICATED')
+  if (context.mustChangePassword) throw new Error('PASSWORD_CHANGE_REQUIRED')
   if (context.kind !== 'staff' || !context.canWrite) throw new Error('FORBIDDEN')
   if (allowedRoles && !allowedRoles.includes(context.role)) throw new Error('FORBIDDEN_ROLE')
 
