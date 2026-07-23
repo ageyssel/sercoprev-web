@@ -25,25 +25,27 @@ export async function verificarCodigo(formData: FormData) {
   const code = typeof formData.get('code') === 'string' ? String(formData.get('code')) : ''
   const { supabase, context } = await authenticatedStaff()
 
+  let result: Awaited<ReturnType<typeof verifyStaffMfaCode>>
   try {
-    const result = await verifyStaffMfaCode(context.user.id, code)
-    if (!result.ok) {
-      if (result.reason === 'expired') {
-        await clearPendingStaffMfaChallenge(context.user.id)
-        await supabase.auth.signOut()
-        redirect('/login?message=El código venció. Ingrese nuevamente para solicitar otro')
-      }
-      if (result.reason === 'locked') {
-        await clearPendingStaffMfaChallenge(context.user.id)
-        await supabase.auth.signOut()
-        redirect('/login?message=El código fue bloqueado por demasiados intentos. Ingrese nuevamente')
-      }
-      const remaining = result.remaining === null ? '' : ` Le quedan ${result.remaining} intentos.`
-      redirect(`/login/verificar-codigo?message=Código incorrecto.${remaining}`)
-    }
+    result = await verifyStaffMfaCode(context.user.id, code)
   } catch (error) {
     console.error('STAFF_MFA_VERIFICATION_FAILED', error)
     redirect('/login/verificar-codigo?message=No fue posible verificar el código. Intente nuevamente')
+  }
+
+  if (!result.ok) {
+    if (result.reason === 'expired') {
+      await clearPendingStaffMfaChallenge(context.user.id)
+      await supabase.auth.signOut()
+      redirect('/login?message=El código venció. Ingrese nuevamente para solicitar otro')
+    }
+    if (result.reason === 'locked') {
+      await clearPendingStaffMfaChallenge(context.user.id)
+      await supabase.auth.signOut()
+      redirect('/login?message=El código fue bloqueado por demasiados intentos. Ingrese nuevamente')
+    }
+    const remaining = result.remaining === null ? '' : ` Le quedan ${result.remaining} intentos.`
+    redirect(`/login/verificar-codigo?message=Código incorrecto.${remaining}`)
   }
 
   revalidatePath('/', 'layout')
@@ -56,6 +58,7 @@ export async function reenviarCodigo() {
   const email = context.user.email?.trim().toLowerCase()
   if (!email) redirect('/login?message=La cuenta interna no tiene un correo válido configurado')
 
+  let failureCode = ''
   try {
     await startStaffMfaChallenge({
       userId: context.user.id,
@@ -63,12 +66,19 @@ export async function reenviarCodigo() {
       displayName: context.displayName,
     })
   } catch (error) {
-    const code = error instanceof Error ? error.message : ''
-    if (code === 'STAFF_MFA_RATE_LIMIT_COOLDOWN') redirect('/login/verificar-codigo?message=Debe esperar un minuto antes de solicitar otro código')
-    if (code === 'STAFF_MFA_RATE_LIMIT_HOURLY') redirect('/login/verificar-codigo?message=Se alcanzó el límite de códigos por hora. Intente más tarde')
-    console.error('STAFF_MFA_RESEND_FAILED', error)
-    redirect('/login/verificar-codigo?message=No fue posible reenviar el código')
+    failureCode = error instanceof Error ? error.message : 'UNKNOWN'
+    if (!['STAFF_MFA_RATE_LIMIT_COOLDOWN', 'STAFF_MFA_RATE_LIMIT_HOURLY'].includes(failureCode)) {
+      console.error('STAFF_MFA_RESEND_FAILED', error)
+    }
   }
+
+  if (failureCode === 'STAFF_MFA_RATE_LIMIT_COOLDOWN') {
+    redirect('/login/verificar-codigo?message=Debe esperar un minuto antes de solicitar otro código')
+  }
+  if (failureCode === 'STAFF_MFA_RATE_LIMIT_HOURLY') {
+    redirect('/login/verificar-codigo?message=Se alcanzó el límite de códigos por hora. Intente más tarde')
+  }
+  if (failureCode) redirect('/login/verificar-codigo?message=No fue posible reenviar el código')
 
   redirect('/login/verificar-codigo?message=Enviamos un nuevo código a su correo')
 }
