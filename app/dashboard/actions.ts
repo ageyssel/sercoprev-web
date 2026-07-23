@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { notifyAdmins } from '@/lib/notifications'
+import { revokeCurrentStaffMfaSession } from '@/lib/staff-mfa'
 import { createClient } from '@/utils/supabase/server'
 import { requireClientCompany } from '@/utils/supabase/require-client'
 
@@ -34,6 +35,8 @@ function safeFilename(value: string) {
 
 export async function signOut() {
   const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  await revokeCurrentStaffMfaSession(user?.id)
   await supabase.auth.signOut()
   return redirect('/login')
 }
