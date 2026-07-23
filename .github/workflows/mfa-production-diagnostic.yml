@@ -42,7 +42,41 @@ jobs:
     env:
       SUPABASE_URL: https://kxrxlygnhukfmdgqhoaz.supabase.co
       SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
     steps:
+      - name: Inspect credential classes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import base64, json, os
+
+          def classify(name):
+              value = os.environ.get(name, '').strip()
+              result = {'name': name, 'configured': bool(value), 'kind': 'missing'}
+              if not value:
+                  print(json.dumps(result))
+                  return
+              if value.startswith('sb_secret_'):
+                  result['kind'] = 'opaque_secret'
+              elif value.count('.') == 2:
+                  result['kind'] = 'jwt'
+                  try:
+                      segment = value.split('.')[0]
+                      segment += '=' * (-len(segment) % 4)
+                      header = json.loads(base64.urlsafe_b64decode(segment).decode())
+                      result['alg'] = header.get('alg')
+                      result['has_kid'] = bool(header.get('kid'))
+                  except Exception:
+                      result['header_parse'] = 'failed'
+              else:
+                  result['kind'] = 'other'
+              print(json.dumps(result))
+
+          classify('SUPABASE_SECRET_KEY')
+          classify('SUPABASE_SERVICE_ROLE_KEY')
+          PY
+
       - name: Inspect Supabase dependencies without personal data
         shell: bash
         run: |
@@ -72,6 +106,13 @@ jobs:
             auth_status=$(curl -sS --max-time 30 "${headers[@]}" -o /tmp/auth-user.json -w '%{http_code}' "$SUPABASE_URL/auth/v1/admin/users/$admin_user_id" || true)
             auth_error=$(jq -c 'if (.message or .msg or .error_description) then {message:(.message // .msg // .error_description)} else null end' /tmp/auth-user.json 2>/dev/null || echo null)
             echo "administrator_auth_lookup status=$auth_status error=$auth_error"
+
+            if [ -n "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
+              legacy_headers=(-H "apikey: $SUPABASE_SERVICE_ROLE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" -H 'Accept: application/json')
+              legacy_status=$(curl -sS --max-time 30 "${legacy_headers[@]}" -o /tmp/auth-user-legacy.json -w '%{http_code}' "$SUPABASE_URL/auth/v1/admin/users/$admin_user_id" || true)
+              legacy_error=$(jq -c 'if (.message or .msg or .error_description) then {message:(.message // .msg // .error_description)} else null end' /tmp/auth-user-legacy.json 2>/dev/null || echo null)
+              echo "administrator_auth_lookup_service_role status=$legacy_status error=$legacy_error"
+            fi
           else
             echo 'administrator_auth_lookup status=none error={"message":"NO_ADMIN_PROFILE"}'
           fi
