@@ -4,7 +4,7 @@ import { getApplicationBaseUrl, getSupabasePublicConfig } from '@/utils/supabase
 
 export const dynamic = 'force-dynamic'
 
-const RELEASE = '2026-07-23-immutable-payroll-indicators-1'
+const RELEASE = '2026-07-23-closed-record-integrity-1'
 
 export async function GET() {
   let publicSupabaseConfig = false
@@ -16,6 +16,7 @@ export async function GET() {
   let officialIndicatorsSchema = false
   let officialDataSchema = false
   let officialDataHistorySchema = false
+  let closedRecordsProtectionSchema = false
   let userAccessSchema = false
   let documentIntakeSchema = false
   let administrator = false
@@ -94,6 +95,13 @@ export async function GET() {
     ])
     officialDataHistorySchema = historyChecks.every((result) => !result.error)
 
+    const { data: protectionMigration, error: protectionError } = await supabase
+      .from('sercoprev_schema_migrations')
+      .select('filename')
+      .eq('filename', '202607230014_closed_record_integrity.sql')
+      .maybeSingle()
+    closedRecordsProtectionSchema = !protectionError && protectionMigration?.filename === '202607230014_closed_record_integrity.sql'
+
     const accountingChecks = await Promise.all([
       supabase.from('plan_cuentas').select('id, codigo').limit(1),
       supabase.from('periodos_contables').select('id, periodo').limit(1),
@@ -131,6 +139,7 @@ export async function GET() {
     officialIndicatorsSchema = false
     officialDataSchema = false
     officialDataHistorySchema = false
+    closedRecordsProtectionSchema = false
     userAccessSchema = false
     documentIntakeSchema = false
     administrator = false
@@ -147,6 +156,7 @@ export async function GET() {
     officialIndicatorsSchema,
     officialDataSchema,
     officialDataHistorySchema,
+    closedRecordsProtectionSchema,
     userAccessSchema,
     documentIntakeSchema,
     administrator,
