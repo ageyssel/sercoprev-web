@@ -175,7 +175,7 @@ function parsePrevired(html: string) {
     rows.push(buildRow({
       fuente_codigo: 'PREVIRED',
       codigo,
-      periodo,
+      periodo: period,
       valor,
       unidad,
       fuente_nombre: 'PREVIRED — Indicadores Previsionales',
@@ -256,7 +256,7 @@ function parseBancoCentral(html: string) {
   const rows = candidates.map(({ code, value, unit }) => buildRow({
     fuente_codigo: 'BANCO_CENTRAL',
     codigo: code,
-    periodo,
+    periodo: period,
     valor: value,
     unidad: unit,
     fuente_nombre: 'Banco Central de Chile — Indicadores diarios',
