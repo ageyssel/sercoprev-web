@@ -4,6 +4,8 @@ export type CsvTable = {
   delimiter: ',' | ';' | '\t'
 }
 
+type CsvDelimiter = CsvTable['delimiter']
+
 function normalizeHeader(value: string) {
   return value
     .replace(/^\uFEFF/, '')
@@ -26,10 +28,14 @@ function countDelimiter(line: string, delimiter: string) {
   return count
 }
 
-function detectDelimiter(text: string): ',' | ';' | '\t' {
+function detectDelimiter(text: string): CsvDelimiter {
   const firstLine = text.split(/\r?\n/, 1)[0] ?? ''
-  const candidates = [',', ';', '\t'] as const
-  return candidates.sort((a, b) => countDelimiter(firstLine, b) - countDelimiter(firstLine, a))[0]
+  const candidates: CsvDelimiter[] = [',', ';', '\t']
+  return candidates.reduce((best, candidate) => (
+    countDelimiter(firstLine, candidate) > countDelimiter(firstLine, best)
+      ? candidate
+      : best
+  ))
 }
 
 function parseRows(text: string, delimiter: string) {
