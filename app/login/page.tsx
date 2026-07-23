@@ -4,6 +4,9 @@ import { BrandLogo } from '@/components/BrandLogo'
 import { SubmitButton } from '@/app/admin/components/SubmitButton'
 import { login } from './actions'
 
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 export default async function LoginPage({ searchParams }: { searchParams: Promise<{ message?: string }> }) {
   const params = await searchParams
 
