@@ -148,6 +148,7 @@ jobs:
             supabase/migrations/202607230009_client_payroll_visibility.sql
             supabase/migrations/202607230010_accounting_imports.sql
             supabase/migrations/202607230011_official_indicators_and_parameter_trace.sql
+            supabase/migrations/202607230012_automatic_official_data.sql
           )
           for migration in "${migrations[@]}"; do test -f "$migration"; done
 
@@ -185,18 +186,27 @@ jobs:
               (to_regclass('public.archivos_ingesta')),
               (to_regclass('public.usuarios_organizacion')),
               (to_regclass('public.empresa_usuarios')),
-              (to_regclass('public.indicadores_oficiales'))
+              (to_regclass('public.indicadores_oficiales')),
+              (to_regclass('public.datos_oficiales'))
             ) as required(table_name) where table_name is null;")
           test "$missing_tables" = '0'
 
           missing_columns=$(psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -Atqc "
-            select count(*) from (values ('uf_fecha'), ('utm_periodo'), ('fuente_uf'), ('fuente_utm'), ('indicadores_verificados_at')) as required(column_name)
+            select count(*) from (values
+              ('uf_fecha'),
+              ('utm_periodo'),
+              ('fuente_uf'),
+              ('fuente_utm'),
+              ('indicadores_verificados_at'),
+              ('fuentes_automaticas'),
+              ('parametros_automaticos_at')
+            ) as required(column_name)
             where not exists (
               select 1 from information_schema.columns
               where table_schema = 'public' and table_name = 'parametros_remuneraciones' and columns.column_name = required.column_name
             );")
           test "$missing_columns" = '0'
-          echo 'Supabase migrations, indicator table and trace columns verified.'
+          echo 'Supabase migrations, official data tables and payroll trace columns verified.'
 
       - name: Setup Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
@@ -230,9 +240,12 @@ jobs:
         run: |
           set -euo pipefail
           python - <<'PY'
-          import json, os
+          import json, os, secrets
           from pathlib import Path
-          values = {'SUPABASE_SECRET_KEY': os.environ['SUPABASE_SECRET_KEY']}
+          values = {
+              'SUPABASE_SECRET_KEY': os.environ['SUPABASE_SECRET_KEY'],
+              'OFFICIAL_SYNC_TOKEN': secrets.token_urlsafe(48),
+          }
           for name in ('RESEND_API_KEY', 'WHATSAPP_ACCESS_TOKEN', 'WHATSAPP_PHONE_NUMBER_ID'):
               value = os.environ.get(name, '').strip()
               if value:
@@ -268,6 +281,7 @@ jobs:
               && grep -q '"payrollSchema":true' /tmp/health.json \
               && grep -q '"accountingSchema":true' /tmp/health.json \
               && grep -q '"officialIndicatorsSchema":true' /tmp/health.json \
+              && grep -q '"officialDataSchema":true' /tmp/health.json \
               && grep -q '"userAccessSchema":true' /tmp/health.json \
               && grep -q '"documentIntakeSchema":true' /tmp/health.json; then
               healthy=true
