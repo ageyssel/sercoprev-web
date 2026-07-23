@@ -2,7 +2,8 @@ import { getOfficialIndicators } from '@/lib/chile-indicators'
 import { createAdminClient } from '@/utils/supabase/admin'
 
 const PREVIRED_URL = 'https://www.previred.com/indicadores-previsionales/'
-const BANCO_CENTRAL_URL = 'https://www.bcentral.cl/es/web/banco-central/inicio/-/details/contenido-general-ver-todos-los-indicadores-diarios'
+const BANCO_CENTRAL_DAILY_URL = 'https://si3.bcentral.cl/Indicadoressiete/secure/IndicadoresDiarios.aspx?Idioma=es-CL'
+const BANCO_CENTRAL_SUPPLEMENTAL_URL = 'https://www.bcentral.cl/es/web/banco-central/inicio/-/details/contenido-general-ver-todos-los-indicadores-diarios'
 
 const MONTHS: Record<string, number> = {
   enero: 1,
@@ -17,6 +18,21 @@ const MONTHS: Record<string, number> = {
   octubre: 10,
   noviembre: 11,
   diciembre: 12,
+}
+
+const ENGLISH_MONTHS: Record<string, number> = {
+  jan: 1,
+  feb: 2,
+  mar: 3,
+  apr: 4,
+  may: 5,
+  jun: 6,
+  jul: 7,
+  aug: 8,
+  sep: 9,
+  oct: 10,
+  nov: 11,
+  dec: 12,
 }
 
 const AFP_NAMES = ['Capital', 'Cuprum', 'Habitat', 'PlanVital', 'ProVida', 'Modelo', 'Uno'] as const
@@ -74,8 +90,14 @@ function normalizeCode(value: string) {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_|_$/g, '').toUpperCase()
 }
 
-function cleanHtml(value: string) {
+function decodeNumericEntities(value: string) {
   return value
+    .replace(/&#x([0-9a-f]+);/gi, (_match, code: string) => String.fromCodePoint(Number.parseInt(code, 16)))
+    .replace(/&#(\d+);/g, (_match, code: string) => String.fromCodePoint(Number.parseInt(code, 10)))
+}
+
+function cleanHtml(value: string) {
+  return decodeNumericEntities(value)
     .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ' ')
     .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, ' ')
     .replace(/<[^>]+>/g, ' ')
@@ -95,6 +117,7 @@ function cleanHtml(value: string) {
 
 function parseChileanNumber(raw: string) {
   const normalized = raw.trim().replace(/\s/g, '').replace(/\.(?=\d{3}(?:\D|$))/g, '').replace(',', '.').replace(/[^0-9.-]/g, '')
+  if (!normalized) throw new Error('OFFICIAL_DATA_INVALID_NUMBER')
   const value = Number(normalized)
   if (!Number.isFinite(value)) throw new Error('OFFICIAL_DATA_INVALID_NUMBER')
   return value
@@ -222,36 +245,45 @@ function parsePrevired(html: string) {
   return { period, obtainedAt, rows, afpRates }
 }
 
-function parseBancoCentral(html: string) {
-  const text = cleanHtml(html)
-  const dateMatch = text.match(/(\d{1,2}) de ([A-Za-zÁÉÍÓÚáéíóúÑñ]+) de (\d{4})/i)
-  if (!dateMatch) throw new Error('BANCO_CENTRAL_DATE_NOT_FOUND')
-  const day = Number(dateMatch[1])
-  const month = monthNumber(dateMatch[2])
-  const year = Number(dateMatch[3])
-  const period = monthPeriod(year, month)
-  const referenceDate = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+function labelValue(html: string, id: string) {
+  const label = html.match(new RegExp(`<label\\b[^>]*\\bid=['"]${id}['"][^>]*>([\\s\\S]*?)<\\/label>`, 'i'))?.[1]
+  if (!label) return null
+  const text = cleanHtml(label)
+  if (!text || /^(?:ND|N\/D|-)$/i.test(text)) return null
+  const value = parseChileanNumber(text)
+  return Number.isFinite(value) ? value : null
+}
+
+function bancoCentralReferenceDate(html: string) {
+  const input = html.match(/<input\b[^>]*\bid=['"]txtDate['"][^>]*>/i)?.[0]
+  const inputDate = input?.match(/\bvalue=['"](\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})['"]/i)
+  if (inputDate) {
+    const month = ENGLISH_MONTHS[inputDate[2].toLowerCase()]
+    if (month) return `${inputDate[3]}-${String(month).padStart(2, '0')}-${String(Number(inputDate[1])).padStart(2, '0')}`
+  }
+
+  const scriptDate = html.match(/new Date\((\d{4}),(\d{1,2}),(\d{1,2})\)/i)
+  if (scriptDate) {
+    const month = Number(scriptDate[2]) + 1
+    return `${scriptDate[1]}-${String(month).padStart(2, '0')}-${String(Number(scriptDate[3])).padStart(2, '0')}`
+  }
+
+  throw new Error('BANCO_CENTRAL_DATE_NOT_FOUND')
+}
+
+function parseBancoCentralDaily(html: string) {
+  const referenceDate = bancoCentralReferenceDate(html)
+  const [yearText, monthText] = referenceDate.split('-')
+  const period = monthPeriod(Number(yearText), Number(monthText))
   const obtainedAt = new Date().toISOString()
 
-  const candidates: Array<{ code: string; value: number; unit: OfficialDataUnit }> = []
-  const optional = (code: string, pattern: RegExp, unit: OfficialDataUnit, divisor = 1) => {
-    const match = text.match(pattern)
-    if (match?.[1]) candidates.push({ code, value: parseChileanNumber(match[1]) / divisor, unit })
-  }
+  const candidates = [
+    { code: 'UF_DIARIA', value: labelValue(html, 'lblValor1_1'), unit: 'CLP' as const },
+    { code: 'DOLAR_OBSERVADO', value: labelValue(html, 'lblValor1_3'), unit: 'CLP' as const },
+    { code: 'EURO', value: labelValue(html, 'lblValor1_5'), unit: 'CLP' as const },
+  ].filter((item): item is { code: string; value: number; unit: 'CLP' } => item.value !== null && item.value > 0)
 
-  optional('UF_DIARIA', /\bUF\b\s*\$\s*([\d.]+,[\d]+)/i, 'CLP')
-  optional('UTM_MENSUAL', /UTM\s*\([^)]+\)\s*\$\s*([\d.]+(?:,[\d]+)?)/i, 'CLP')
-  optional('DOLAR_OBSERVADO', /D[oó]lar Observado\s*\$\s*([\d.]+,[\d]+)/i, 'CLP')
-  optional('EURO', /\bEuro\b\s*\$\s*([\d.]+,[\d]+)/i, 'CLP')
-  optional('TPM', /TPM\s*\(%\)\s*([\d.,-]+)%/i, 'TASA', 100)
-
-  const ipcMatch = text.match(/IPC\s*\([^)]+\)\s*\(Var\.?%\)\s*([\d.,-]+)\s*Mensual\s*([\d.,-]+)\s*Anual/i)
-  if (ipcMatch) {
-    candidates.push({ code: 'IPC_VARIACION_MENSUAL', value: parseChileanNumber(ipcMatch[1]) / 100, unit: 'TASA' })
-    candidates.push({ code: 'IPC_VARIACION_ANUAL', value: parseChileanNumber(ipcMatch[2]) / 100, unit: 'TASA' })
-  }
-
-  if (candidates.length < 3) throw new Error('BANCO_CENTRAL_INDICATORS_INCOMPLETE')
+  if (candidates.length < 3) throw new Error('BANCO_CENTRAL_DAILY_INDICATORS_INCOMPLETE')
 
   const rows = candidates.map(({ code, value, unit }) => buildRow({
     fuente_codigo: 'BANCO_CENTRAL',
@@ -260,12 +292,51 @@ function parseBancoCentral(html: string) {
     valor: value,
     unidad: unit,
     fuente_nombre: 'Banco Central de Chile — Indicadores diarios',
-    fuente_url: BANCO_CENTRAL_URL,
+    fuente_url: BANCO_CENTRAL_DAILY_URL,
     obtenido_at: obtainedAt,
-    metadata: { fecha_referencia: referenceDate },
+    metadata: { fecha_referencia: referenceDate, publicacion: 'IndicadoresSiete' },
   }))
 
   return { period, referenceDate, obtainedAt, rows }
+}
+
+function parseBancoCentralSupplemental(html: string, period: string, referenceDate: string, obtainedAt: string) {
+  const text = cleanHtml(html)
+  const candidates: Array<{ code: string; value: number; unit: OfficialDataUnit }> = []
+  const optional = (code: string, pattern: RegExp, unit: OfficialDataUnit, divisor = 1) => {
+    const match = text.match(pattern)
+    if (!match?.[1]) return
+    try {
+      candidates.push({ code, value: parseChileanNumber(match[1]) / divisor, unit })
+    } catch {
+      // Una publicación complementaria ausente no invalida los indicadores diarios principales.
+    }
+  }
+
+  optional('UTM_MENSUAL', /UTM\s*\([^)]+\)\s*\$?\s*([\d.]+(?:,[\d]+)?)/i, 'CLP')
+  optional('TPM', /TPM\s*\(%\)\s*([\d.,-]+)\s*%/i, 'TASA', 100)
+
+  const ipcMatch = text.match(/IPC\s*\([^)]+\)\s*\(Var\.?%\)\s*([\d.,-]+)\s*Mensual\s*([\d.,-]+)\s*Anual/i)
+  if (ipcMatch) {
+    try {
+      candidates.push({ code: 'IPC_VARIACION_MENSUAL', value: parseChileanNumber(ipcMatch[1]) / 100, unit: 'TASA' })
+      candidates.push({ code: 'IPC_VARIACION_ANUAL', value: parseChileanNumber(ipcMatch[2]) / 100, unit: 'TASA' })
+    } catch {
+      // Mantener la sincronización diaria aunque el bloque IPC cambie de formato.
+    }
+  }
+
+  return candidates.map(({ code, value, unit }) => buildRow({
+    fuente_codigo: 'BANCO_CENTRAL',
+    codigo: code,
+    periodo: period,
+    valor: value,
+    unidad,
+    fuente_nombre: 'Banco Central de Chile — Indicadores económicos',
+    fuente_url: BANCO_CENTRAL_SUPPLEMENTAL_URL,
+    obtenido_at: obtainedAt,
+    metadata: { fecha_referencia: referenceDate, publicacion: 'Portal BCCh' },
+  }))
 }
 
 async function readCachedPayroll(period: string): Promise<AutomaticPayrollDefaults | null> {
@@ -320,9 +391,28 @@ export async function syncPreviredCurrent() {
 }
 
 export async function syncBancoCentralCurrent() {
-  const parsed = parseBancoCentral(await fetchOfficialPage(BANCO_CENTRAL_URL, 3600))
-  await saveOfficialRows(parsed.rows)
-  return { source: 'BANCO_CENTRAL', period: parsed.period, referenceDate: parsed.referenceDate, obtainedAt: parsed.obtainedAt, values: parsed.rows.length }
+  const [dailyHtml, supplementalHtml] = await Promise.all([
+    fetchOfficialPage(BANCO_CENTRAL_DAILY_URL, 3600),
+    fetchOfficialPage(BANCO_CENTRAL_SUPPLEMENTAL_URL, 3600).catch((error) => {
+      console.warn('BANCO_CENTRAL_SUPPLEMENTAL_UNAVAILABLE', error)
+      return null
+    }),
+  ])
+
+  const daily = parseBancoCentralDaily(dailyHtml)
+  const supplementalRows = supplementalHtml
+    ? parseBancoCentralSupplemental(supplementalHtml, daily.period, daily.referenceDate, daily.obtainedAt)
+    : []
+  const rows = [...daily.rows, ...supplementalRows]
+  await saveOfficialRows(rows)
+  return {
+    source: 'BANCO_CENTRAL',
+    period: daily.period,
+    referenceDate: daily.referenceDate,
+    obtainedAt: daily.obtainedAt,
+    values: rows.length,
+    supplementalValues: supplementalRows.length,
+  }
 }
 
 export async function getAutomaticPayrollDefaults(inputDate: string): Promise<AutomaticPayrollDefaults> {
