@@ -4,6 +4,8 @@ import { getApplicationBaseUrl, getSupabasePublicConfig } from '@/utils/supabase
 
 export const dynamic = 'force-dynamic'
 
+const RELEASE = '2026-07-23-auth-render-hotfix-1'
+
 export async function GET() {
   let publicSupabaseConfig = false
   let applicationBaseUrl = false
@@ -106,7 +108,8 @@ export async function GET() {
 
     const { data: buckets, error: bucketError } = await supabase.storage.listBuckets()
     documentStorage = !bucketError && Boolean(buckets?.some((bucket) => bucket.id === 'documentos' && bucket.public === false))
-  } catch {
+  } catch (error) {
+    console.error('HEALTH_CHECK_FAILED', error)
     database = false
     operationalSchema = false
     payrollSchema = false
@@ -134,7 +137,7 @@ export async function GET() {
   const healthy = Object.values(checks).every(Boolean)
 
   return NextResponse.json(
-    { status: healthy ? 'ok' : 'degraded', checks },
+    { status: healthy ? 'ok' : 'degraded', release: RELEASE, checks },
     { status: healthy ? 200 : 503, headers: { 'Cache-Control': 'no-store, max-age=0', 'X-Robots-Tag': 'noindex, nofollow, noarchive' } },
   )
 }
