@@ -1,0 +1,43 @@
+name: Patch Deploy Release Verification
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.head_ref == 'hotfix/official-source-parsers'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: hotfix/official-source-parsers
+          fetch-depth: 0
+
+      - name: Align production verification and push
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('.github/workflows/deploy-cloudflare.yml')
+          text = path.read_text()
+          text = text.replace('2026-07-23-closed-record-integrity-1', '2026-07-23-official-sync-operational-1')
+          anchor = "              && grep -q '\"officialDataHistorySchema\":true' /tmp/health.json \\\n"
+          freshness = "              && grep -q '\"officialDataFreshness\":true' /tmp/health.json \\\n"
+          if freshness not in text:
+              if anchor not in text:
+                  raise SystemExit('Health verification anchor not found')
+              text = text.replace(anchor, anchor + freshness, 1)
+          path.write_text(text)
+          PY
+          if git diff --quiet; then exit 0; fi
+          git config user.name 'SERCOPREV Automation'
+          git config user.email 'actions@users.noreply.github.com'
+          git add .github/workflows/deploy-cloudflare.yml
+          git commit -m 'Alinear verificación del release oficial'
+          git push origin HEAD:hotfix/official-source-parsers
