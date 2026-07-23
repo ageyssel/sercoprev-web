@@ -1,6 +1,10 @@
+import { CompanySearchSelector } from '@/components/admin/CompanySelector'
+import type { CompanySelectorOption } from '@/components/admin/CompanySelector'
 import { InfoTip } from '@/components/ui/InfoTip'
 
-export { CompanySelector } from '@/components/admin/CompanySelector'
+export function CompanySelector({ companies, selectedId }: { companies: CompanySelectorOption[]; selectedId?: string | null }) {
+  return <CompanySearchSelector key={selectedId ?? 'sin-empresa'} companies={companies} selectedId={selectedId} />
+}
 
 export function ModulePageHeader({ eyebrow, title, description, help, actions }: { eyebrow: string; title: string; description: string; help?: React.ReactNode; actions?: React.ReactNode }) {
   return (
