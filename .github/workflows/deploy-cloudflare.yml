@@ -102,21 +102,17 @@ jobs:
             "${DATABASE_URL_SECRET:-}" \
             "${POSTGRES_URL_SECRET:-}"; do
             if [ -n "$candidate" ]; then
-              direct_url="$candidate"
+              direct_url=$(RAW_URL="$candidate" python - <<'PY'
+          import os
+          value = os.environ['RAW_URL'].strip()
+          if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+              value = value[1:-1].strip()
+          print(value, end='')
+          PY
+              )
               break
             fi
           done
-
-          if [ -n "$direct_url" ]; then
-            echo "::add-mask::$direct_url"
-            if ! psql "$direct_url" -v ON_ERROR_STOP=1 -Atqc 'select 1' >/dev/null; then
-              echo '::error title=Invalid Supabase database URL::A configured database URL exists but PostgreSQL could not connect.'
-              exit 1
-            fi
-            echo "SUPABASE_DB_URL=$direct_url" >> "$GITHUB_ENV"
-            echo 'Supabase database connection resolved from an existing URL secret.'
-            exit 0
-          fi
 
           password=''
           for candidate in \
@@ -129,28 +125,79 @@ jobs:
             fi
           done
 
+          if [ -n "$direct_url" ]; then
+            echo "::add-mask::$direct_url"
+            if psql "$direct_url" -v ON_ERROR_STOP=1 -Atqc 'select 1' >/dev/null 2>&1; then
+              echo "SUPABASE_DB_URL=$direct_url" >> "$GITHUB_ENV"
+              echo 'Supabase database connection resolved from the configured URL.'
+              exit 0
+            fi
+
+            extracted_password=$(DIRECT_URL="$direct_url" python - <<'PY'
+          import os
+          from urllib.parse import unquote, urlparse
+          try:
+              parsed = urlparse(os.environ['DIRECT_URL'])
+              value = unquote(parsed.password or '')
+              if value.upper() in {'YOUR-PASSWORD', '[YOUR-PASSWORD]', 'PASSWORD', '[PASSWORD]'}:
+                  value = ''
+              print(value, end='')
+          except Exception:
+              pass
+          PY
+            )
+            if [ -n "$extracted_password" ]; then
+              password="$extracted_password"
+            fi
+            echo 'Configured URL was not directly reachable; trying Supabase pooler endpoints.'
+          fi
+
+          if [ -z "$password" ]; then
+            echo '::error title=Supabase database connection failed::The configured URL did not connect and no usable database password could be extracted. Replace SUPABASE_DB_URL with the complete Session Pooler URI from Supabase.'
+            exit 1
+          fi
+
+          echo "::add-mask::$password"
           encoded_password=$(PASSWORD="$password" python - <<'PY'
           import os
           from urllib.parse import quote
-          print(quote(os.environ['PASSWORD'], safe=''))
+          print(quote(os.environ['PASSWORD'], safe=''), end='')
           PY
           )
 
           project_ref='kxrxlygnhukfmdgqhoaz'
-          regions=(sa-east-1 us-east-1 us-west-1 eu-west-1 eu-central-1 ap-southeast-1 ap-northeast-1)
+          regions=(
+            sa-east-1
+            us-east-1
+            us-east-2
+            us-west-1
+            us-west-2
+            ca-central-1
+            eu-west-1
+            eu-west-2
+            eu-central-1
+            ap-south-1
+            ap-southeast-1
+            ap-southeast-2
+            ap-northeast-1
+            ap-northeast-2
+          )
+
           for region in "${regions[@]}"; do
-            for cluster in 0 1; do
-              candidate="postgresql://postgres.${project_ref}:${encoded_password}@aws-${cluster}-${region}.pooler.supabase.com:5432/postgres?sslmode=require&connect_timeout=6"
-              echo "::add-mask::$candidate"
-              if psql "$candidate" -v ON_ERROR_STOP=1 -Atqc 'select 1' >/dev/null 2>&1; then
-                echo "SUPABASE_DB_URL=$candidate" >> "$GITHUB_ENV"
-                echo "Supabase session pooler resolved for region $region."
-                exit 0
-              fi
+            for cluster in 0 1 2; do
+              for port in 5432 6543; do
+                candidate="postgresql://postgres.${project_ref}:${encoded_password}@aws-${cluster}-${region}.pooler.supabase.com:${port}/postgres?sslmode=require&connect_timeout=6"
+                echo "::add-mask::$candidate"
+                if psql "$candidate" -v ON_ERROR_STOP=1 -Atqc 'select 1' >/dev/null 2>&1; then
+                  echo "SUPABASE_DB_URL=$candidate" >> "$GITHUB_ENV"
+                  echo "Supabase pooler resolved for region $region on port $port."
+                  exit 0
+                fi
+              done
             done
           done
 
-          echo '::error title=Supabase database connection failed::A database password secret exists, but no supported Supabase session pooler accepted it. Add the complete SUPABASE_DB_URL secret.'
+          echo '::error title=Supabase database connection failed::The URL and compatible pooler endpoints rejected the configured credentials. Replace SUPABASE_DB_URL with the exact Session Pooler URI shown in Supabase Connect.'
           exit 1
 
       - name: Apply pending Supabase migrations
