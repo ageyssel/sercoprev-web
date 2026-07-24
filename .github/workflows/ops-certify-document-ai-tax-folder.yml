@@ -1,0 +1,337 @@
+name: Certify Document AI Production
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare-production
+  cancel-in-progress: true
+
+jobs:
+  deploy-and-certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 9021b712f9a73815e6b333a4870e0021
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+      SUPABASE_DB_URL_SECRET: ${{ secrets.SUPABASE_DB_URL }}
+      SUPABASE_DATABASE_URL_SECRET: ${{ secrets.SUPABASE_DATABASE_URL }}
+      DATABASE_URL_SECRET: ${{ secrets.DATABASE_URL }}
+      POSTGRES_URL_SECRET: ${{ secrets.POSTGRES_URL }}
+      SUPABASE_DB_PASSWORD_SECRET: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      SUPABASE_DATABASE_PASSWORD_SECRET: ${{ secrets.SUPABASE_DATABASE_PASSWORD }}
+      POSTGRES_PASSWORD_SECRET: ${{ secrets.POSTGRES_PASSWORD }}
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      WHATSAPP_ACCESS_TOKEN: ${{ secrets.WHATSAPP_ACCESS_TOKEN }}
+      WHATSAPP_PHONE_NUMBER_ID: ${{ secrets.WHATSAPP_PHONE_NUMBER_ID }}
+
+    steps:
+      - name: Validate credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          test -n "${SUPABASE_SECRET_KEY:-}"
+          test -n "${RESEND_API_KEY:-}"
+          test -n "${SUPABASE_DB_URL_SECRET:-}${SUPABASE_DATABASE_URL_SECRET:-}${DATABASE_URL_SECRET:-}${POSTGRES_URL_SECRET:-}${SUPABASE_DB_PASSWORD_SECRET:-}${SUPABASE_DATABASE_PASSWORD_SECRET:-}${POSTGRES_PASSWORD_SECRET:-}"
+
+      - name: Checkout exact main
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: main
+
+      - name: Confirm commit and release
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = '6a6ff20ba684aebcaaa7489633d0cd653ef44bf1'
+          health_release=$(sed -n "s/^const RELEASE = '\([^']*\)'$/\1/p" app/api/health/route.ts)
+          version_release=$(sed -n "s/^const RELEASE = '\([^']*\)'$/\1/p" app/api/version/route.ts)
+          test "$health_release" = '2026-07-24-document-ai-tax-folder-1'
+          test "$health_release" = "$version_release"
+          echo "EXPECTED_RELEASE=$health_release" >> "$GITHUB_ENV"
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund --silent
+
+      - name: Install PostgreSQL client
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends postgresql-client
+          fi
+
+      - name: Resolve Supabase database connection
+        shell: bash
+        run: |
+          set -euo pipefail
+          raw=''
+          for value in "${SUPABASE_DB_URL_SECRET:-}" "${SUPABASE_DATABASE_URL_SECRET:-}" "${DATABASE_URL_SECRET:-}" "${POSTGRES_URL_SECRET:-}"; do
+            if [ -n "$value" ]; then raw="$value"; break; fi
+          done
+          raw=$(RAW="$raw" python - <<'PY'
+          import os
+          value = os.environ.get('RAW', '').strip()
+          if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+              value = value[1:-1].strip()
+          print(value, end='')
+          PY
+          )
+          password=''
+          for value in "${SUPABASE_DB_PASSWORD_SECRET:-}" "${SUPABASE_DATABASE_PASSWORD_SECRET:-}" "${POSTGRES_PASSWORD_SECRET:-}"; do
+            if [ -n "$value" ]; then password="$value"; break; fi
+          done
+          if [[ "$raw" == postgresql://* || "$raw" == postgres://* ]]; then
+            echo "::add-mask::$raw"
+            if psql "$raw" -v ON_ERROR_STOP=1 -Atqc 'select 1' >/dev/null 2>&1; then
+              echo "SUPABASE_DB_URL=$raw" >> "$GITHUB_ENV"
+              exit 0
+            fi
+            extracted=$(RAW="$raw" python - <<'PY'
+          import os
+          from urllib.parse import unquote, urlparse
+          value = unquote(urlparse(os.environ['RAW']).password or '')
+          print('' if value.upper() in {'YOUR-PASSWORD', '[YOUR-PASSWORD]', 'PASSWORD', '[PASSWORD]'} else value, end='')
+          PY
+            )
+            [ -z "$password" ] && password="$extracted"
+          elif [ -n "$raw" ] && [ -z "$password" ]; then
+            password="$raw"
+          fi
+          test -n "$password"
+          echo "::add-mask::$password"
+          encoded=$(PASSWORD="$password" python - <<'PY'
+          import os
+          from urllib.parse import quote
+          print(quote(os.environ['PASSWORD'], safe=''), end='')
+          PY
+          )
+          project_ref='kxrxlygnhukfmdgqhoaz'
+          regions=(sa-east-1 us-east-1 us-east-2 us-west-1 us-west-2 ca-central-1 eu-west-1 eu-west-2 eu-central-1 ap-south-1 ap-southeast-1 ap-southeast-2 ap-northeast-1 ap-northeast-2)
+          for region in "${regions[@]}"; do
+            for cluster in 0 1 2; do
+              for port in 5432 6543; do
+                candidate="postgresql://postgres.${project_ref}:${encoded}@aws-${cluster}-${region}.pooler.supabase.com:${port}/postgres?sslmode=require&connect_timeout=6"
+                echo "::add-mask::$candidate"
+                if psql "$candidate" -v ON_ERROR_STOP=1 -Atqc 'select 1' >/dev/null 2>&1; then
+                  echo "SUPABASE_DB_URL=$candidate" >> "$GITHUB_ENV"
+                  exit 0
+                fi
+              done
+            done
+          done
+          exit 1
+
+      - name: Apply migration 019 idempotently
+        shell: bash
+        run: |
+          set -euo pipefail
+          migration='supabase/migrations/202607240019_document_ai_and_tax_folder.sql'
+          filename=$(basename "$migration")
+          checksum=$(sha256sum "$migration" | awk '{print $1}')
+          recorded=$(psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -Atqc "select checksum from public.sercoprev_schema_migrations where filename = '$filename'")
+          if [ -n "$recorded" ]; then
+            test "$recorded" = "$checksum"
+            echo "Migration already applied with expected checksum."
+          else
+            psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f "$migration"
+            psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -c "insert into public.sercoprev_schema_migrations(filename, checksum) values ('$filename', '$checksum')"
+          fi
+
+      - name: Verify document AI schema
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -Atqc "
+            select case when
+              exists (select 1 from public.sercoprev_schema_migrations where filename = '202607240019_document_ai_and_tax_folder.sql')
+              and exists (select 1 from information_schema.columns where table_schema='public' and table_name='documentos' and column_name='tipo_documento_codigo')
+              and exists (select 1 from information_schema.columns where table_schema='public' and table_name='archivos_ingesta' and column_name='ai_estado')
+              and exists (select 1 from information_schema.columns where table_schema='public' and table_name='archivos_ingesta' and column_name='tipo_documento_sugerido')
+              and to_regprocedure('public.publicar_archivo_ingesta(uuid,uuid,text,text,text,date,text,uuid,text,jsonb)') is not null
+            then 1 else 0 end;" | grep -qx '1'
+
+      - name: Test Carpeta Tributaria replacement transaction
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          begin;
+          do $$
+          declare
+            company_id uuid;
+            actor_id uuid;
+            lot_id uuid;
+            intake_id uuid;
+            previous_id uuid;
+            publication jsonb;
+            remaining integer;
+          begin
+            select id into company_id from public.empresas where es_admin = false order by created_at limit 1;
+            select user_id into actor_id from public.usuarios_organizacion where activo = true and rol in ('Superadministrador', 'Administrador') order by created_at limit 1;
+            if company_id is null then raise exception 'NO_COMPANY_FOR_TEST'; end if;
+
+            insert into public.lotes_documentales(nombre, total_archivos, pendientes, estado, creado_por)
+            values ('TEST_ROLLBACK_CARPETA_TRIBUTARIA', 1, 1, 'Con observaciones', actor_id)
+            returning id into lot_id;
+
+            insert into public.archivos_ingesta(
+              lote_id, empresa_id, nombre_original, storage_path, mime_type, file_size,
+              categoria_sugerida, tipo_documento_sugerido, estado, ai_estado, confianza,
+              empresa_confianza, tipo_confianza, periodo_confianza
+            ) values (
+              lot_id, company_id, 'carpeta-nueva.pdf', 'test/rollback/carpeta-nueva.pdf',
+              'application/pdf', 100, 'Tributario', 'CARPETA_TRIBUTARIA', 'Revisión',
+              'Completado', 99, 99, 99, 100
+            ) returning id into intake_id;
+
+            insert into public.documentos(
+              empresa_id, nombre_original, storage_path, categoria, descripcion,
+              tipo_documento_codigo, visible_cliente
+            ) values (
+              company_id, 'carpeta-anterior.pdf', 'test/rollback/carpeta-anterior.pdf',
+              'Tributario', 'Versión anterior temporal de prueba', 'CARPETA_TRIBUTARIA', true
+            ) returning id into previous_id;
+
+            publication := public.publicar_archivo_ingesta(
+              intake_id, company_id, 'Tributario', 'CARPETA_TRIBUTARIA', null, current_date,
+              'test/rollback/carpeta-nueva.pdf', actor_id, 'Prueba transaccional',
+              jsonb_build_object('test', true)
+            );
+
+            select count(*) into remaining
+            from public.documentos
+            where empresa_id = company_id and tipo_documento_codigo = 'CARPETA_TRIBUTARIA';
+
+            if remaining <> 1 then raise exception 'EXPECTED_ONE_CURRENT_FOLDER_GOT_%', remaining; end if;
+            if exists (select 1 from public.documentos where id = previous_id) then raise exception 'PREVIOUS_FOLDER_NOT_REMOVED'; end if;
+            if coalesce((publication->>'reemplazados')::integer, 0) <> 1 then raise exception 'REPLACEMENT_COUNT_INVALID'; end if;
+            if not (publication->'storage_paths_eliminar' @> '["test/rollback/carpeta-anterior.pdf"]'::jsonb) then raise exception 'OLD_STORAGE_PATH_NOT_RETURNED'; end if;
+          end $$;
+          rollback;
+          SQL
+
+      - name: Build and verify bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run lint -- --quiet
+          npm run typecheck -- --pretty false
+          npm run build:cloudflare
+          npx wrangler deploy --dry-run --outdir .wrangler-dry-run > /tmp/worker-size.log 2>&1
+          cat /tmp/worker-size.log
+          grep -q 'AI' /tmp/worker-size.log
+          gzip_kib=$(sed -n 's/.*gzip: \([0-9.]*\) KiB.*/\1/p' /tmp/worker-size.log | tail -n 1)
+          test -n "$gzip_kib"
+          python - "$gzip_kib" <<'PY'
+          import sys
+          if float(sys.argv[1]) > 3000:
+              raise SystemExit('Worker exceeds Free plan compressed limit')
+          PY
+
+      - name: Prepare atomic secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          token=$(python - <<'PY'
+          import secrets
+          print(secrets.token_urlsafe(48))
+          PY
+          )
+          echo "::add-mask::$token"
+          echo "INTERNAL_TOKEN=$token" >> "$GITHUB_ENV"
+          TOKEN="$token" python - <<'PY'
+          import json, os
+          from pathlib import Path
+          values = {
+              'SUPABASE_SECRET_KEY': os.environ['SUPABASE_SECRET_KEY'],
+              'RESEND_API_KEY': os.environ['RESEND_API_KEY'],
+              'OFFICIAL_SYNC_TOKEN': os.environ['TOKEN'],
+          }
+          for name in ('WHATSAPP_ACCESS_TOKEN', 'WHATSAPP_PHONE_NUMBER_ID'):
+              value = os.environ.get(name, '').strip()
+              if value:
+                  values[name] = value
+          path = Path('/tmp/sercoprev-cloudflare-secrets.json')
+          path.write_text(json.dumps(values))
+          path.chmod(0o600)
+          PY
+
+      - name: Deploy exact main
+        shell: bash
+        run: |
+          set -euo pipefail
+          trap 'rm -f /tmp/sercoprev-cloudflare-secrets.json' EXIT
+          npx wrangler deploy --secrets-file /tmp/sercoprev-cloudflare-secrets.json
+
+      - name: Verify active Cloudflare bindings
+        shell: bash
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/sercoprev-web/settings"
+          curl -sS --max-time 30 -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" "$api" -o /tmp/settings.json
+          jq -e '.success == true' /tmp/settings.json >/dev/null
+          for name in AI NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY APP_BASE_URL SUPABASE_SECRET_KEY RESEND_API_KEY OFFICIAL_SYNC_TOKEN ASSETS WORKER_SELF_REFERENCE; do
+            jq -e --arg name "$name" '.result.bindings | any(.name == $name)' /tmp/settings.json >/dev/null || {
+              echo "Missing Worker binding: $name"
+              jq '[.result.bindings[] | {name, type}]' /tmp/settings.json
+              exit 1
+            }
+          done
+          jq '[.result.bindings[] | {name, type}]' /tmp/settings.json
+
+      - name: Certify production contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          healthy=false
+          for attempt in $(seq 1 60); do
+            nonce="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${attempt}"
+            home_status=$(curl -sS -L --max-time 25 -o /tmp/home.html -w '%{http_code}' "https://www.sercoprev.cl/?_verify=$nonce" || true)
+            login_status=$(curl -sS -L --max-time 25 -o /tmp/login.html -w '%{http_code}' "https://www.sercoprev.cl/login?_verify=$nonce" || true)
+            admin_status=$(curl -sS --max-time 25 -o /tmp/admin.html -w '%{http_code}' "https://www.sercoprev.cl/admin/documentos-masivos?_verify=$nonce" || true)
+            analyze_status=$(curl -sS --max-time 25 -o /tmp/analyze.json -w '%{http_code}' -X POST -H 'content-type: application/json' --data '{"intakeId":"00000000-0000-0000-0000-000000000000"}' "https://www.sercoprev.cl/api/internal/document-ai/analyze?_verify=$nonce" || true)
+            apply_status=$(curl -sS --max-time 25 -o /tmp/apply.json -w '%{http_code}' -X POST -H 'content-type: application/json' --data '{}' "https://www.sercoprev.cl/api/internal/document-ai/apply?_verify=$nonce" || true)
+            health_status=$(curl -sS --max-time 25 -o /tmp/health.json -w '%{http_code}' "https://www.sercoprev.cl/api/health?_verify=$nonce" || true)
+            version_status=$(curl -sS --max-time 25 -o /tmp/version.json -w '%{http_code}' "https://www.sercoprev.cl/api/version?_verify=$nonce" || true)
+
+            valid=true
+            [ "$home_status" = '200' ] || valid=false
+            [ "$login_status" = '200' ] || valid=false
+            { [ "$admin_status" = '302' ] || [ "$admin_status" = '307' ] || [ "$admin_status" = '308' ]; } || valid=false
+            [ "$analyze_status" = '404' ] || valid=false
+            [ "$apply_status" = '404' ] || valid=false
+            [ "$health_status" = '200' ] || valid=false
+            [ "$version_status" = '200' ] || valid=false
+            jq -e --arg release "$EXPECTED_RELEASE" '.status == "ok" and .release == $release and .checks.documentAiSchema == true and .checks.documentAiTokenConfigured == true and .checks.officialDataHistorySchema == true and ([.checks[]] | all)' /tmp/health.json >/dev/null 2>&1 || valid=false
+            jq -e --arg release "$EXPECTED_RELEASE" '.service == "sercoprev-web" and .release == $release and .runtime == "cloudflare-workers"' /tmp/version.json >/dev/null 2>&1 || valid=false
+            if [ "$valid" = true ]; then healthy=true; break; fi
+            sleep 5
+          done
+
+          echo "GET / => ${home_status:-unknown}"
+          echo "GET /login => ${login_status:-unknown}"
+          echo "GET /admin/documentos-masivos => ${admin_status:-unknown}"
+          echo "POST /api/internal/document-ai/analyze without token => ${analyze_status:-unknown}"
+          echo "POST /api/internal/document-ai/apply without token => ${apply_status:-unknown}"
+          echo "GET /api/health => ${health_status:-unknown}"
+          echo "GET /api/version => ${version_status:-unknown}"
+          cat /tmp/health.json 2>/dev/null || true
+          echo
+          cat /tmp/version.json 2>/dev/null || true
+          echo
+          test "$healthy" = true
