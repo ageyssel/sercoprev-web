@@ -148,22 +148,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          migrations=(
-            supabase/migrations/202607220004_recurring_tasks_notifications.sql
-            supabase/migrations/202607230005_accounting_payroll_users_documents.sql
-            supabase/migrations/202607230006_document_intake_queue.sql
-            supabase/migrations/202607230007_user_security_and_payroll_defaults.sql
-            supabase/migrations/202607230008_payroll_monthly_inputs.sql
-            supabase/migrations/202607230009_client_payroll_visibility.sql
-            supabase/migrations/202607230010_accounting_imports.sql
-            supabase/migrations/202607230011_official_indicators_and_parameter_trace.sql
-            supabase/migrations/202607230012_automatic_official_data.sql
-            supabase/migrations/202607230013_immutable_payroll_and_indicator_history.sql
-            supabase/migrations/202607230014_closed_record_integrity.sql
-            supabase/migrations/202607230015_staff_email_mfa.sql
-            supabase/migrations/202607240016_comprehensive_audit_and_admin_rbac.sql
-            supabase/migrations/202607240017_audit_immutability_fk_fix.sql
-          )
+          manifest='supabase/migrations/production-manifest.txt'
+          test -f "$manifest"
+          mapfile -t migrations < <(grep -vE '^\s*(#|$)' "$manifest")
+          test "${#migrations[@]}" -gt 0
           for migration in "${migrations[@]}"; do test -f "$migration"; done
 
           psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 <<'SQL'
@@ -195,42 +183,27 @@ jobs:
               and to_regclass('public.staff_mfa_challenges') is not null
               and to_regclass('public.staff_mfa_sessions') is not null
               and to_regclass('public.auditoria_eventos') is not null
-              and exists (
-                select 1 from information_schema.columns
-                where table_schema = 'public' and table_name = 'auditoria_eventos' and column_name = 'transaction_code'
-              )
-              and exists (
-                select 1 from information_schema.columns
-                where table_schema = 'public' and table_name = 'auditoria_eventos' and column_name = 'actor_role'
-              )
-              and exists (
-                select 1 from public.sercoprev_schema_migrations
-                where filename = '202607240016_comprehensive_audit_and_admin_rbac.sql'
-              )
-              and exists (
-                select 1 from public.sercoprev_schema_migrations
-                where filename = '202607240017_audit_immutability_fk_fix.sql'
-              )
+              and to_regclass('public.pagina_comercial_config') is not null
+              and to_regclass('public.pagina_comercial_servicios') is not null
+              and to_regclass('public.pagina_comercial_equipo') is not null
+              and to_regclass('public.pagina_comercial_resenas') is not null
+              and exists (select 1 from public.pagina_comercial_config where id = 'principal')
+              and exists (select 1 from public.pagina_comercial_servicios)
+              and exists (select 1 from public.pagina_comercial_equipo)
+              and exists (select 1 from storage.buckets where id = 'pagina-comercial' and public = true)
+              and exists (select 1 from public.sercoprev_schema_migrations where filename = '202607240018_commercial_site_cms.sql')
               and to_regprocedure('private.is_privileged_admin()') is not null
               and exists (select 1 from pg_trigger where not tgisinternal and tgname = 'datos_oficiales_capture_version')
               and exists (select 1 from pg_trigger where not tgisinternal and tgname = 'periodos_remuneraciones_protect_state')
               and exists (select 1 from pg_trigger where not tgisinternal and tgname = 'periodos_contables_protect_closed')
               and exists (select 1 from pg_trigger where not tgisinternal and tgname = 'auditoria_eventos_immutable')
-              and exists (select 1 from pg_trigger where not tgisinternal and tgname = 'audit_change_empresas')
+              and exists (select 1 from pg_trigger where not tgisinternal and tgname = 'audit_change_pagina_comercial_config')
+              and exists (select 1 from pg_trigger where not tgisinternal and tgname = 'audit_change_pagina_comercial_servicios')
+              and exists (select 1 from pg_trigger where not tgisinternal and tgname = 'audit_change_pagina_comercial_equipo')
+              and exists (select 1 from pg_trigger where not tgisinternal and tgname = 'audit_change_pagina_comercial_resenas')
               and exists (
                 select 1 from pg_policies
-                where schemaname = 'public' and tablename = 'auditoria_eventos' and policyname = 'auditoria_privileged_admin_select'
-              )
-              and not exists (
-                select 1
-                from pg_constraint
-                where conrelid = 'public.auditoria_eventos'::regclass
-                  and contype = 'f'
-                  and conname in (
-                    'auditoria_eventos_actor_user_id_fkey',
-                    'auditoria_eventos_empresa_id_fkey',
-                    'auditoria_eventos_target_user_id_fkey'
-                  )
+                where schemaname = 'public' and tablename = 'pagina_comercial_servicios' and policyname = 'pagina_comercial_servicios_public_select'
               )
             then 1 else 0 end;" | grep -qx '1'
 
@@ -328,6 +301,7 @@ jobs:
             closedRecordsProtectionSchema
             userAccessSchema
             auditTrailSchema
+            commercialSiteSchema
             staffMfaSchema
             staffMfaEmailDeliveryConfigured
             documentIntakeSchema
@@ -340,6 +314,7 @@ jobs:
             home_status=$(curl -sS -L --max-time 20 -o /tmp/home.html -w '%{http_code}' "https://www.sercoprev.cl/?_verify=$nonce" || true)
             login_status=$(curl -sS -L --max-time 20 -o /tmp/login.html -w '%{http_code}' "https://www.sercoprev.cl/login?_verify=$nonce" || true)
             verify_status=$(curl -sS --max-time 20 -o /tmp/verify.html -w '%{http_code}' "https://www.sercoprev.cl/login/verificar-codigo?_verify=$nonce" || true)
+            settings_status=$(curl -sS --max-time 20 -o /tmp/settings.html -w '%{http_code}' "https://www.sercoprev.cl/admin/configuracion/pagina-comercial?_verify=$nonce" || true)
             health_status=$(curl -sS --max-time 20 -o /tmp/health.json -w '%{http_code}' "https://www.sercoprev.cl/api/health?_verify=$nonce" || true)
             version_status=$(curl -sS --max-time 20 -o /tmp/version.json -w '%{http_code}' "https://www.sercoprev.cl/api/version?_verify=$nonce" || true)
 
@@ -347,8 +322,11 @@ jobs:
             [ "$home_status" = '200' ] || valid=false
             [ "$login_status" = '200' ] || valid=false
             { [ "$verify_status" = '302' ] || [ "$verify_status" = '307' ] || [ "$verify_status" = '308' ]; } || valid=false
+            { [ "$settings_status" = '302' ] || [ "$settings_status" = '307' ] || [ "$settings_status" = '308' ]; } || valid=false
             [ "$health_status" = '200' ] || valid=false
             [ "$version_status" = '200' ] || valid=false
+            grep -qi 'Nuestro equipo' /tmp/home.html || valid=false
+            grep -qi 'Mostrar' /tmp/login.html || valid=false
             jq -e --arg release "$EXPECTED_RELEASE" '.status == "ok" and .release == $release' /tmp/health.json >/dev/null 2>&1 || valid=false
             jq -e --arg release "$EXPECTED_RELEASE" '.service == "sercoprev-web" and .release == $release and .runtime == "cloudflare-workers"' /tmp/version.json >/dev/null 2>&1 || valid=false
             for check in "${checks[@]}"; do
@@ -365,6 +343,7 @@ jobs:
           echo "GET / => ${home_status:-unknown}"
           echo "GET /login => ${login_status:-unknown}"
           echo "GET /login/verificar-codigo => ${verify_status:-unknown}"
+          echo "GET /admin/configuracion/pagina-comercial => ${settings_status:-unknown}"
           echo "GET /api/health => ${health_status:-unknown}"
           echo "GET /api/version => ${version_status:-unknown}"
           cat /tmp/health.json 2>/dev/null || true
