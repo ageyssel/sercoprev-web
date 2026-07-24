@@ -19,17 +19,11 @@ type WorkerSelfReference = {
   fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response>
 }
 
-type MarkdownConversion = {
-  format?: string
-  data?: string
-  error?: string
-}
-
+type MarkdownConversion = { format?: string; data?: string; error?: string }
 type AiBinding = {
   toMarkdown(input: { name: string; blob: Blob } | Array<{ name: string; blob: Blob }>): Promise<MarkdownConversion | MarkdownConversion[]>
   run(model: string, input: unknown): Promise<unknown>
 }
-
 type WorkerEnvironment = {
   WORKER_SELF_REFERENCE: WorkerSelfReference
   AI: AiBinding
@@ -38,19 +32,8 @@ type WorkerEnvironment = {
   SUPABASE_SECRET_KEY?: string
   NEXT_PUBLIC_SUPABASE_URL?: string
 }
-
-type WorkerContext = {
-  waitUntil(promise: Promise<unknown>): void
-}
-
-type IntakeRow = {
-  id: string
-  nombre_original: string
-  storage_path: string
-  mime_type: string | null
-  ai_intentos: number
-}
-
+type WorkerContext = { waitUntil(promise: Promise<unknown>): void }
+type IntakeRow = { id: string; nombre_original: string; storage_path: string; mime_type: string | null; ai_intentos: number }
 type AiClassification = {
   company_id?: unknown
   company_confidence?: unknown
@@ -75,40 +58,24 @@ function numberConfidence(value: unknown) {
   const number = Number(value)
   return Number.isFinite(number) ? Math.min(100, Math.max(0, Math.round(number))) : 0
 }
+function text(value: unknown, maxLength: number) { return typeof value === 'string' ? value.trim().slice(0, maxLength) : '' }
+function object(value: unknown) { return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {} }
+function storagePath(path: string) { return path.split('/').map(encodeURIComponent).join('/') }
+function internalToken(env: WorkerEnvironment) { return env.DOCUMENT_AI_TOKEN?.trim() || env.OFFICIAL_SYNC_TOKEN?.trim() || '' }
 
-function text(value: unknown, maxLength: number) {
-  return typeof value === 'string' ? value.trim().slice(0, maxLength) : ''
-}
-
-function object(value: unknown) {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
-}
-
-function storagePath(path: string) {
-  return path.split('/').map(encodeURIComponent).join('/')
-}
-
-function supabaseHeaders(env: WorkerEnvironment, extra: Record<string, string> = {}) {
+function supabaseHeaders(env: WorkerEnvironment) {
   const key = env.SUPABASE_SECRET_KEY?.trim()
   if (!key) throw new Error('SUPABASE_SECRET_KEY_MISSING')
-  return {
-    apikey: key,
-    Authorization: `Bearer ${key}`,
-    ...extra,
-  }
+  return { apikey: key, Authorization: `Bearer ${key}` }
 }
 
 async function supabaseJson<T>(env: WorkerEnvironment, path: string, init?: RequestInit): Promise<T> {
   const baseUrl = env.NEXT_PUBLIC_SUPABASE_URL?.trim()
   if (!baseUrl) throw new Error('SUPABASE_URL_MISSING')
-  const response = await fetch(`${baseUrl}${path}`, {
-    ...init,
-    headers: {
-      ...supabaseHeaders(env),
-      ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
-      ...(init?.headers ?? {}),
-    },
-  })
+  const headers = new Headers(init?.headers)
+  for (const [name, value] of Object.entries(supabaseHeaders(env))) headers.set(name, value)
+  if (init?.body) headers.set('Content-Type', 'application/json')
+  const response = await fetch(`${baseUrl}${path}`, { ...init, headers })
   if (!response.ok) throw new Error(`SUPABASE_HTTP_${response.status}:${(await response.text()).slice(0, 300)}`)
   if (response.status === 204) return undefined as T
   return await response.json() as T
@@ -149,20 +116,16 @@ function candidateCompanies(markdown: string, filename: string, companies: Compa
       || (legal.length >= 5 && normalizedContent.includes(legal))
       || (fantasy.length >= 4 && normalizedContent.includes(fantasy))
   })
-
   if (candidates.length > 0) return candidates.slice(0, 12)
   const fromFilename = classifyDocumentText(filename, companies, 'nombre')
-  if (fromFilename.companyId) return companies.filter((company) => company.id === fromFilename.companyId)
-  return []
+  return fromFilename.companyId ? companies.filter((company) => company.id === fromFilename.companyId) : []
 }
 
 function aiSchema(companyIds: string[]) {
   return {
     type: 'object',
     properties: {
-      company_id: companyIds.length > 0
-        ? { anyOf: [{ type: 'string', enum: companyIds }, { type: 'null' }] }
-        : { type: 'null' },
+      company_id: companyIds.length > 0 ? { anyOf: [{ type: 'string', enum: companyIds }, { type: 'null' }] } : { type: 'null' },
       company_confidence: { type: 'integer', minimum: 0, maximum: 100 },
       document_type_code: { type: 'string', enum: DOCUMENT_TYPE_CODES },
       type_confidence: { type: 'integer', minimum: 0, maximum: 100 },
@@ -182,10 +145,7 @@ function aiSchema(companyIds: string[]) {
         additionalProperties: false,
       },
     },
-    required: [
-      'company_id', 'company_confidence', 'document_type_code', 'type_confidence',
-      'period', 'period_confidence', 'document_date', 'detected_rut', 'reasons', 'evidences',
-    ],
+    required: ['company_id', 'company_confidence', 'document_type_code', 'type_confidence', 'period', 'period_confidence', 'document_date', 'detected_rut', 'reasons', 'evidences'],
     additionalProperties: false,
   }
 }
@@ -208,9 +168,7 @@ async function analyzeDocument(intakeId: string, env: WorkerEnvironment) {
 
     const baseUrl = env.NEXT_PUBLIC_SUPABASE_URL?.trim()
     if (!baseUrl) throw new Error('SUPABASE_URL_MISSING')
-    const fileResponse = await fetch(`${baseUrl}/storage/v1/object/authenticated/documentos/${storagePath(intake.storage_path)}`, {
-      headers: supabaseHeaders(env),
-    })
+    const fileResponse = await fetch(`${baseUrl}/storage/v1/object/authenticated/documentos/${storagePath(intake.storage_path)}`, { headers: supabaseHeaders(env) })
     if (!fileResponse.ok) throw new Error(`DOCUMENT_DOWNLOAD_${fileResponse.status}`)
     const fileBuffer = await fileResponse.arrayBuffer()
     const conversion = await env.AI.toMarkdown({
@@ -225,12 +183,7 @@ async function analyzeDocument(intakeId: string, env: WorkerEnvironment) {
       env,
       '/rest/v1/empresas?es_admin=eq.false&select=id,rut,razon_social,nombre_fantasia&limit=5000',
     )
-    const companies: CompanyReference[] = companiesRows.map((company) => ({
-      id: company.id,
-      rut: company.rut,
-      razonSocial: company.razon_social,
-      nombreFantasia: company.nombre_fantasia,
-    }))
+    const companies: CompanyReference[] = companiesRows.map((company) => ({ id: company.id, rut: company.rut, razonSocial: company.razon_social, nombreFantasia: company.nombre_fantasia }))
     const deterministic = classifyDocumentText(markdown, companies, 'contenido')
     const candidates = candidateCompanies(markdown, intake.nombre_original, companies)
     const candidateText = candidates.length === 0
@@ -249,7 +202,7 @@ async function analyzeDocument(intakeId: string, env: WorkerEnvironment) {
             'Clasificas documentos contables, tributarios, laborales, bancarios y legales chilenos para SERCOPREV.',
             'No inventes empresas, RUT, periodos ni identificadores. company_id solo puede ser uno de los candidatos entregados.',
             'Distingue el RUT del contribuyente o empleador del RUT de trabajadores, proveedores, receptores o representantes.',
-            'Para Carpeta Tributaria exige evidencia explícita como “Carpeta Tributaria Electrónica”, información del contribuyente, actividades económicas o secciones tributarias consolidadas.',
+            'Para Carpeta Tributaria exige evidencia explícita como Carpeta Tributaria Electrónica, información del contribuyente, actividades económicas o secciones tributarias consolidadas.',
             'El periodo debe corresponder al periodo tributario, remuneracional o rango principal del documento, no a una fecha de descarga o impresión secundaria.',
             'Devuelve exclusivamente el JSON solicitado.',
           ].join(' '),
@@ -263,11 +216,7 @@ async function analyzeDocument(intakeId: string, env: WorkerEnvironment) {
       temperature: 0,
       response_format: {
         type: 'json_schema',
-        json_schema: {
-          name: 'sercoprev_document_classification',
-          strict: true,
-          schema: aiSchema(candidates.map((company) => company.id)),
-        },
+        json_schema: { name: 'sercoprev_document_classification', strict: true, schema: aiSchema(candidates.map((company) => company.id)) },
       },
     })
     const ai = parseAiResponse(aiRaw)
@@ -275,40 +224,20 @@ async function analyzeDocument(intakeId: string, env: WorkerEnvironment) {
     const validCandidateIds = new Set(candidates.map((company) => company.id))
     const aiCompanyId = typeof ai.company_id === 'string' && validCandidateIds.has(ai.company_id) ? ai.company_id : null
     const companyId = deterministic.exactRutMatch ? deterministic.companyId : aiCompanyId ?? deterministic.companyId
-    const companyConfidence = deterministic.exactRutMatch
-      ? 99
-      : aiCompanyId
-        ? Math.min(85, numberConfidence(ai.company_confidence))
-        : deterministic.companyId
-          ? 72
-          : 0
+    const companyConfidence = deterministic.exactRutMatch ? 99 : aiCompanyId ? Math.min(85, numberConfidence(ai.company_confidence)) : deterministic.companyId ? 72 : 0
 
-    const aiTypeCode = typeof ai.document_type_code === 'string' && isDocumentTypeCode(ai.document_type_code)
-      ? ai.document_type_code
-      : 'SIN_CLASIFICAR'
+    const aiTypeCode = typeof ai.document_type_code === 'string' && isDocumentTypeCode(ai.document_type_code) ? ai.document_type_code : 'SIN_CLASIFICAR'
     const deterministicType = deterministic.documentTypeCode
     const documentTypeCode: DocumentTypeCode = deterministicType !== 'SIN_CLASIFICAR' ? deterministicType : aiTypeCode
     const typeAgreement = deterministicType !== 'SIN_CLASIFICAR' && deterministicType === aiTypeCode
-    const typeConfidence = documentTypeCode === 'SIN_CLASIFICAR'
-      ? 0
-      : typeAgreement
-        ? Math.max(95, numberConfidence(ai.type_confidence))
-        : deterministicType !== 'SIN_CLASIFICAR'
-          ? 90
-          : numberConfidence(ai.type_confidence)
+    const typeConfidence = documentTypeCode === 'SIN_CLASIFICAR' ? 0 : typeAgreement ? Math.max(95, numberConfidence(ai.type_confidence)) : deterministicType !== 'SIN_CLASIFICAR' ? 90 : numberConfidence(ai.type_confidence)
 
     const aiPeriod = typeof ai.period === 'string' && PERIOD_PATTERN.test(ai.period) ? ai.period : null
     const period = deterministic.period ?? aiPeriod
-    const periodConfidence = deterministic.period
-      ? Math.max(90, numberConfidence(ai.period_confidence))
-      : aiPeriod
-        ? numberConfidence(ai.period_confidence)
-        : DOCUMENT_TYPES[documentTypeCode].periodRequired
-          ? 0
-          : 100
+    const periodConfidence = deterministic.period ? Math.max(90, numberConfidence(ai.period_confidence)) : aiPeriod ? numberConfidence(ai.period_confidence) : DOCUMENT_TYPES[documentTypeCode].periodRequired ? 0 : 100
     const aiDate = typeof ai.document_date === 'string' && DATE_PATTERN.test(ai.document_date) ? ai.document_date : null
     const documentDate = deterministic.documentDate ?? aiDate
-    const detectedRut = deterministic.detectedRut ?? text(ai.detected_rut, 16) || null
+    const detectedRut = deterministic.detectedRut ?? (text(ai.detected_rut, 16) || null)
     const weightedPeriod = DOCUMENT_TYPES[documentTypeCode].periodRequired ? periodConfidence : 100
     const overallConfidence = Math.round((companyConfidence * 0.5) + (typeConfidence * 0.35) + (weightedPeriod * 0.15))
     const aiReasons = Array.isArray(ai.reasons) ? ai.reasons.filter((item): item is string => typeof item === 'string').slice(0, 12) : []
@@ -323,10 +252,7 @@ async function analyzeDocument(intakeId: string, env: WorkerEnvironment) {
 
     const applyResponse = await env.WORKER_SELF_REFERENCE.fetch('https://www.sercoprev.cl/api/internal/document-ai/apply', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-sercoprev-document-ai-token': env.DOCUMENT_AI_TOKEN?.trim() ?? '',
-      },
+      headers: { 'Content-Type': 'application/json', 'x-sercoprev-document-ai-token': internalToken(env) },
       body: JSON.stringify({
         intakeId,
         companyId,
@@ -350,9 +276,7 @@ async function analyzeDocument(intakeId: string, env: WorkerEnvironment) {
         rawResult: object(ai),
       }),
     })
-    if (!applyResponse.ok && applyResponse.status !== 202) {
-      throw new Error(`DOCUMENT_APPLY_${applyResponse.status}:${(await applyResponse.text()).slice(0, 300)}`)
-    }
+    if (!applyResponse.ok && applyResponse.status !== 202) throw new Error(`DOCUMENT_APPLY_${applyResponse.status}:${(await applyResponse.text()).slice(0, 300)}`)
   } catch (error) {
     console.error('DOCUMENT_AI_ANALYSIS_FAILED', intakeId, error)
     await patchIntake(env, intakeId, {
@@ -370,20 +294,14 @@ async function synchronizeOfficialData(env: WorkerEnvironment) {
     console.error('OFFICIAL_SYNC_TOKEN is not configured; official data synchronization was skipped.')
     return
   }
-
   const response = await env.WORKER_SELF_REFERENCE.fetch('https://www.sercoprev.cl/api/internal/sync-official-data', {
     method: 'POST',
-    headers: {
-      'x-sercoprev-sync-token': token,
-      'user-agent': 'SERCOPREV-Official-Data-Scheduler/1.0',
-    },
+    headers: { 'x-sercoprev-sync-token': token, 'user-agent': 'SERCOPREV-Official-Data-Scheduler/1.0' },
   })
-
   if (!response.ok) {
     const body = await response.text().catch(() => '')
     throw new Error(`OFFICIAL_SYNC_HTTP_${response.status}:${body.slice(0, 300)}`)
   }
-
   console.log('Official data synchronization completed.', await response.text())
 }
 
@@ -391,8 +309,8 @@ export default {
   async fetch(request: Request, env: WorkerEnvironment, context: WorkerContext) {
     const url = new URL(request.url)
     if (url.pathname === DOCUMENT_AI_PATH) {
-      if (request.method !== 'POST') return new NextResponse(null, { status: 404 })
-      const expected = env.DOCUMENT_AI_TOKEN?.trim()
+      if (request.method !== 'POST') return new Response(null, { status: 404 })
+      const expected = internalToken(env)
       const provided = request.headers.get('x-sercoprev-document-ai-token')?.trim()
       if (!expected || !provided || expected !== provided) return new Response(null, { status: 404 })
       const payload = object(await request.json().catch(() => null))
