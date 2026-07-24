@@ -1,0 +1,164 @@
+name: Deploy CMS Image Fix
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare-production
+  cancel-in-progress: true
+
+jobs:
+  deploy-and-certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 9021b712f9a73815e6b333a4870e0021
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      WHATSAPP_ACCESS_TOKEN: ${{ secrets.WHATSAPP_ACCESS_TOKEN }}
+      WHATSAPP_PHONE_NUMBER_ID: ${{ secrets.WHATSAPP_PHONE_NUMBER_ID }}
+      SUPABASE_URL: https://kxrxlygnhukfmdgqhoaz.supabase.co
+      TARGET_TEAM_ID: df018b32-a946-478b-a633-d2e5491e810b
+
+    steps:
+      - name: Validate credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          test -n "${SUPABASE_SECRET_KEY:-}"
+          test -n "${RESEND_API_KEY:-}"
+
+      - name: Checkout exact main
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: main
+
+      - name: Confirm exact main and source fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = '349d14971a7021bda7ada94f69b5e3ac813454fa'
+          grep -Fq "img-src 'self' data: blob: https://kxrxlygnhukfmdgqhoaz.supabase.co" next.config.ts
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('app/admin/configuracion/pagina-comercial/actions.ts').read_text()
+          for name in ('crearIntegranteEquipo', 'actualizarIntegranteEquipo', 'crearResenaComercial', 'actualizarResenaComercial'):
+              start = text.index(f'export async function {name}')
+              end = text.find('\nexport async function ', start + 1)
+              block = text[start:] if end == -1 else text[start:end]
+              catch_end = block.rfind('catch')
+              success = block.rfind("returnToAdmin('")
+              if success <= catch_end:
+                  raise SystemExit(f'{name}: success redirect is still inside catch scope')
+          print('Server action redirect structure accepted.')
+          PY
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund --silent
+
+      - name: Validate and build Worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run lint
+          npx tsc --noEmit
+          npm run build:cloudflare
+          npx wrangler deploy --dry-run --outdir .wrangler-dry-run > /tmp/worker-size.log 2>&1
+          gzip_kib=$(sed -n 's/.*gzip: \([0-9.]*\) KiB.*/\1/p' /tmp/worker-size.log | tail -n 1)
+          test -n "$gzip_kib"
+          python - "$gzip_kib" <<'PY'
+          import sys
+          if float(sys.argv[1]) > 3000:
+              raise SystemExit('Worker exceeds Free plan compressed limit')
+          PY
+
+      - name: Verify current team photo in Supabase
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -sS --max-time 30 \
+            -H "apikey: ${SUPABASE_SECRET_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_SECRET_KEY}" \
+            "${SUPABASE_URL}/rest/v1/pagina_comercial_equipo?id=eq.${TARGET_TEAM_ID}&select=id,nombre,foto_path" \
+            -o /tmp/team.json
+          jq -e 'length == 1 and .[0].foto_path != null and (.[0].foto_path | length > 0)' /tmp/team.json >/dev/null
+          photo_path=$(jq -r '.[0].foto_path' /tmp/team.json)
+          echo "PHOTO_PATH=$photo_path" >> "$GITHUB_ENV"
+          photo_url="${SUPABASE_URL}/storage/v1/object/public/pagina-comercial/${photo_path}"
+          status=$(curl -sS -L --max-time 30 -o /tmp/photo.bin -D /tmp/photo.headers -w '%{http_code}' "$photo_url")
+          test "$status" = '200'
+          grep -Eqi '^content-type: image/(png|jpeg|webp)' /tmp/photo.headers
+          test -s /tmp/photo.bin
+
+      - name: Prepare atomic secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, secrets
+          from pathlib import Path
+          values = {
+              'SUPABASE_SECRET_KEY': os.environ['SUPABASE_SECRET_KEY'],
+              'RESEND_API_KEY': os.environ['RESEND_API_KEY'],
+              'OFFICIAL_SYNC_TOKEN': secrets.token_urlsafe(48),
+          }
+          for name in ('WHATSAPP_ACCESS_TOKEN', 'WHATSAPP_PHONE_NUMBER_ID'):
+              value = os.environ.get(name, '').strip()
+              if value:
+                  values[name] = value
+          path = Path('/tmp/sercoprev-cloudflare-secrets.json')
+          path.write_text(json.dumps(values))
+          path.chmod(0o600)
+          PY
+
+      - name: Deploy exact main
+        shell: bash
+        run: |
+          set -euo pipefail
+          trap 'rm -f /tmp/sercoprev-cloudflare-secrets.json' EXIT
+          npx wrangler deploy --secrets-file /tmp/sercoprev-cloudflare-secrets.json
+
+      - name: Certify production CSP and image
+        shell: bash
+        run: |
+          set -euo pipefail
+          healthy=false
+          photo_url="${SUPABASE_URL}/storage/v1/object/public/pagina-comercial/${PHOTO_PATH}"
+          for attempt in $(seq 1 60); do
+            nonce="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${attempt}"
+            home_status=$(curl -sS -L --max-time 25 -o /tmp/home.html -D /tmp/home.headers -w '%{http_code}' "https://www.sercoprev.cl/?_verify=$nonce" || true)
+            admin_status=$(curl -sS --max-time 25 -o /tmp/admin.html -D /tmp/admin.headers -w '%{http_code}' "https://www.sercoprev.cl/admin/configuracion/pagina-comercial?_verify=$nonce" || true)
+            health_status=$(curl -sS --max-time 25 -o /tmp/health.json -w '%{http_code}' "https://www.sercoprev.cl/api/health?_verify=$nonce" || true)
+            photo_status=$(curl -sS -L --max-time 25 -o /tmp/prod-photo.bin -w '%{http_code}' "$photo_url" || true)
+            valid=true
+            [ "$home_status" = '200' ] || valid=false
+            { [ "$admin_status" = '302' ] || [ "$admin_status" = '307' ] || [ "$admin_status" = '308' ]; } || valid=false
+            [ "$health_status" = '200' ] || valid=false
+            [ "$photo_status" = '200' ] || valid=false
+            grep -Eqi '^content-security-policy:.*img-src[^;]*https://kxrxlygnhukfmdgqhoaz[.]supabase[.]co' /tmp/home.headers || valid=false
+            grep -qi 'Guillermo Paiguano' /tmp/home.html || valid=false
+            jq -e '.status == "ok"' /tmp/health.json >/dev/null 2>&1 || valid=false
+            test -s /tmp/prod-photo.bin || valid=false
+            if [ "$valid" = true ]; then healthy=true; break; fi
+            sleep 5
+          done
+          echo "GET / => ${home_status:-unknown}"
+          echo "GET /admin/configuracion/pagina-comercial => ${admin_status:-unknown}"
+          echo "GET /api/health => ${health_status:-unknown}"
+          echo "GET photo => ${photo_status:-unknown}"
+          grep -i '^content-security-policy:' /tmp/home.headers || true
+          cat /tmp/health.json 2>/dev/null || true
+          test "$healthy" = true
