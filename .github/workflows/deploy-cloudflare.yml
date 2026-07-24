@@ -162,6 +162,7 @@ jobs:
             supabase/migrations/202607230014_closed_record_integrity.sql
             supabase/migrations/202607230015_staff_email_mfa.sql
             supabase/migrations/202607240016_comprehensive_audit_and_admin_rbac.sql
+            supabase/migrations/202607240017_audit_immutability_fk_fix.sql
           )
           for migration in "${migrations[@]}"; do test -f "$migration"; done
 
@@ -206,6 +207,10 @@ jobs:
                 select 1 from public.sercoprev_schema_migrations
                 where filename = '202607240016_comprehensive_audit_and_admin_rbac.sql'
               )
+              and exists (
+                select 1 from public.sercoprev_schema_migrations
+                where filename = '202607240017_audit_immutability_fk_fix.sql'
+              )
               and to_regprocedure('private.is_privileged_admin()') is not null
               and exists (select 1 from pg_trigger where not tgisinternal and tgname = 'datos_oficiales_capture_version')
               and exists (select 1 from pg_trigger where not tgisinternal and tgname = 'periodos_remuneraciones_protect_state')
@@ -215,6 +220,17 @@ jobs:
               and exists (
                 select 1 from pg_policies
                 where schemaname = 'public' and tablename = 'auditoria_eventos' and policyname = 'auditoria_privileged_admin_select'
+              )
+              and not exists (
+                select 1
+                from pg_constraint
+                where conrelid = 'public.auditoria_eventos'::regclass
+                  and contype = 'f'
+                  and conname in (
+                    'auditoria_eventos_actor_user_id_fkey',
+                    'auditoria_eventos_empresa_id_fkey',
+                    'auditoria_eventos_target_user_id_fkey'
+                  )
               )
             then 1 else 0 end;" | grep -qx '1'
 
