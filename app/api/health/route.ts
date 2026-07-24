@@ -4,7 +4,7 @@ import { getApplicationBaseUrl, getSupabasePublicConfig } from '@/utils/supabase
 
 export const dynamic = 'force-dynamic'
 
-const RELEASE = '2026-07-23-staff-email-mfa-health-2'
+const RELEASE = '2026-07-24-comprehensive-audit-rbac-1'
 const OFFICIAL_DATA_MAX_AGE_MS = 48 * 60 * 60 * 1000
 
 type QueryResult = { error: unknown }
@@ -152,6 +152,17 @@ export async function GET() {
     ]))
   })
 
+  const auditTrailSchema = await safeCheck('AUDIT_TRAIL_SCHEMA', async () => {
+    const supabase = createAdminClient()
+    const [audit, migration] = await Promise.all([
+      supabase.from('auditoria_eventos').select('id, transaction_code, actor_name, actor_email, actor_role, target_user_id, module, description, result, source, request_id, before_data, after_data, created_at').limit(1),
+      supabase.from('sercoprev_schema_migrations').select('filename').eq('filename', '202607240016_comprehensive_audit_and_admin_rbac.sql').maybeSingle(),
+    ])
+    return !audit.error
+      && !migration.error
+      && migration.data?.filename === '202607240016_comprehensive_audit_and_admin_rbac.sql'
+  })
+
   const staffMfaSchema = await safeCheck('STAFF_MFA_SCHEMA', async () => {
     const supabase = createAdminClient()
     const [challenge, session, migration] = await Promise.all([
@@ -210,6 +221,7 @@ export async function GET() {
     officialDataFreshness,
     closedRecordsProtectionSchema,
     userAccessSchema,
+    auditTrailSchema,
     staffMfaSchema,
     staffMfaEmailDeliveryConfigured,
     documentIntakeSchema,
