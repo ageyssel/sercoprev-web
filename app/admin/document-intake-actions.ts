@@ -2,12 +2,14 @@
 
 import { revalidatePath } from 'next/cache'
 import { classifyDocumentFilename, type CompanyReference } from '@/lib/document-classifier'
+import { DOCUMENT_TYPES, isDocumentTypeCode, type DocumentTypeCode } from '@/lib/document-types'
 import { notifyCompany } from '@/lib/notifications'
 import { requireAdmin } from '@/utils/supabase/require-admin'
 
 export type IntakeActionState = { status: 'idle' | 'success' | 'error'; message: string; batchId?: string }
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const PERIOD_PATTERN = /^20\d{2}-(0[1-9]|1[0-2])$/
 const ALLOWED_TYPES = new Set([
   'application/pdf',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -30,6 +32,63 @@ function safeFilename(value: string) {
   return `${base}${extension}`
 }
 
+async function sha256(buffer: ArrayBuffer) {
+  const digest = await crypto.subtle.digest('SHA-256', buffer)
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+async function requestAiAnalysis(intakeId: string) {
+  const token = process.env.DOCUMENT_AI_TOKEN?.trim()
+  if (!token) return { configured: false, accepted: false }
+  const baseUrl = process.env.APP_BASE_URL?.trim() || 'https://www.sercoprev.cl'
+  try {
+    const response = await fetch(`${baseUrl}/api/internal/document-ai/analyze`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-sercoprev-document-ai-token': token,
+      },
+      body: JSON.stringify({ intakeId }),
+      cache: 'no-store',
+    })
+    return { configured: true, accepted: response.status === 202 }
+  } catch (error) {
+    console.error('DOCUMENT_AI_ENQUEUE_FAILED', intakeId, error)
+    return { configured: true, accepted: false }
+  }
+}
+
+function parsePublicationResult(value: unknown) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
+}
+
+async function removeReplacedStorageFiles(
+  adminClient: Awaited<ReturnType<typeof requireAdmin>>['adminClient'],
+  actorUserId: string,
+  empresaId: string,
+  intakeId: string,
+  result: Record<string, unknown>,
+) {
+  const paths = Array.isArray(result.storage_paths_eliminar)
+    ? result.storage_paths_eliminar.filter((item): item is string => typeof item === 'string' && item.length > 0)
+    : []
+  if (paths.length === 0) return
+  const { error } = await adminClient.storage.from('documentos').remove(paths)
+  if (!error) return
+  await adminClient.from('auditoria_eventos').insert({
+    actor_user_id: actorUserId,
+    empresa_id: empresaId,
+    accion: 'limpieza_storage_carpeta_tributaria_fallida',
+    entidad: 'archivo_ingesta',
+    entidad_id: intakeId,
+    module: 'Documentos',
+    description: 'La Carpeta Tributaria fue reemplazada, pero quedaron archivos privados pendientes de limpieza en Storage.',
+    result: 'fallido',
+    source: 'aplicacion',
+    metadata: { cantidad: paths.length },
+  })
+}
+
 export async function cargarLoteDocumental(_state: IntakeActionState, formData: FormData): Promise<IntakeActionState> {
   try {
     const { adminClient, actorUserId } = await requireAdmin(['Superadministrador', 'Administrador', 'Contador', 'Remuneraciones'])
@@ -43,157 +102,174 @@ export async function cargarLoteDocumental(_state: IntakeActionState, formData: 
     const companies: CompanyReference[] = (companyRows ?? []).map((company) => ({ id: company.id, rut: company.rut, razonSocial: company.razon_social, nombreFantasia: company.nombre_fantasia }))
 
     const batchName = clean(formData.get('nombre_lote'), 180) || `Carga ${new Date().toLocaleDateString('es-CL')}`
-    const { data: batch, error: batchError } = await adminClient.from('lotes_documentales').insert({ nombre: batchName, total_archivos: files.length, estado: 'Procesando', creado_por: actorUserId }).select('id').single()
+    const { data: batch, error: batchError } = await adminClient.from('lotes_documentales').insert({ nombre: batchName, total_archivos: files.length, pendientes: files.length, estado: 'Procesando', creado_por: actorUserId }).select('id').single()
     if (batchError) throw batchError
 
-    let classified = 0
-    let pending = 0
+    let analyzing = 0
+    let review = 0
     let failures = 0
-    const publishedByCompany = new Map<string, number>()
 
     for (const file of files) {
-      const classification = classifyDocumentFilename(file.name, companies)
+      const filenameClassification = classifyDocumentFilename(file.name, companies)
       const safeName = safeFilename(file.name)
-      const storagePath = classification.companyId
-        ? `${classification.companyId}/lotes/${batch.id}/${crypto.randomUUID()}-${safeName}`
-        : `pendientes/${batch.id}/${crypto.randomUUID()}-${safeName}`
+      const storagePath = `pendientes/${batch.id}/${crypto.randomUUID()}-${safeName}`
+      let uploaded = false
 
       try {
-        const { error: uploadError } = await adminClient.storage.from('documentos').upload(storagePath, await file.arrayBuffer(), { contentType: file.type, cacheControl: '3600', upsert: false })
+        const buffer = await file.arrayBuffer()
+        const fileHash = await sha256(buffer)
+        const { error: uploadError } = await adminClient.storage.from('documentos').upload(storagePath, buffer, { contentType: file.type, cacheControl: '3600', upsert: false })
         if (uploadError) throw uploadError
+        uploaded = true
 
-        let documentId: string | null = null
-        if (classification.status === 'Confirmada' && classification.companyId) {
-          const { data: document, error: documentError } = await adminClient.from('documentos').insert({
-            empresa_id: classification.companyId,
-            nombre_original: file.name.slice(0, 255),
-            storage_path: storagePath,
-            categoria: classification.category,
-            periodo: classification.period,
-            descripcion: `Clasificado automáticamente desde el lote ${batchName}`,
-            uploaded_by: actorUserId,
-            mime_type: file.type,
-            file_size: file.size,
-            visible_cliente: true,
-            lote_id: batch.id,
-            clasificacion_estado: 'Confirmada',
-            rut_detectado: classification.detectedRut,
-            fecha_documento: classification.documentDate,
-            fuente_carga: 'Masiva',
-            metadata_clasificacion: { confianza: classification.confidence, razones: classification.reasons },
-          }).select('id').single()
-          if (documentError) throw documentError
-          documentId = document.id
-          classified += 1
-          publishedByCompany.set(classification.companyId, (publishedByCompany.get(classification.companyId) ?? 0) + 1)
-        } else {
-          pending += 1
-        }
-
-        const { error: intakeError } = await adminClient.from('archivos_ingesta').insert({
+        const tokenConfigured = Boolean(process.env.DOCUMENT_AI_TOKEN?.trim())
+        const { data: intake, error: intakeError } = await adminClient.from('archivos_ingesta').insert({
           lote_id: batch.id,
-          empresa_id: classification.companyId,
-          documento_id: documentId,
+          empresa_id: filenameClassification.companyId,
           nombre_original: file.name.slice(0, 255),
           storage_path: storagePath,
           mime_type: file.type,
           file_size: file.size,
-          categoria_sugerida: classification.category,
-          periodo_sugerido: classification.period,
-          fecha_sugerida: classification.documentDate,
-          rut_detectado: classification.detectedRut,
-          confianza: classification.confidence,
-          estado: documentId ? 'Clasificado' : 'Revisión',
-          razones: classification.reasons,
-        })
+          categoria_sugerida: filenameClassification.category,
+          tipo_documento_sugerido: filenameClassification.documentTypeCode,
+          periodo_sugerido: filenameClassification.period,
+          fecha_sugerida: filenameClassification.documentDate,
+          rut_detectado: filenameClassification.detectedRut,
+          confianza: filenameClassification.confidence,
+          empresa_confianza: filenameClassification.exactRutMatch ? 75 : filenameClassification.companyId ? 45 : 0,
+          tipo_confianza: filenameClassification.documentTypeCode === 'SIN_CLASIFICAR' ? 0 : 35,
+          periodo_confianza: filenameClassification.period ? 35 : 0,
+          estado: tokenConfigured ? 'Analizando' : 'Revisión',
+          ai_estado: tokenConfigured ? 'Pendiente' : 'No configurado',
+          razones: [...filenameClassification.reasons, tokenConfigured ? 'Pendiente de análisis del contenido con IA.' : 'Workers AI todavía no está configurado; requiere revisión manual.'],
+          archivo_hash: fileHash,
+        }).select('id').single()
         if (intakeError) throw intakeError
+
+        const aiRequest = await requestAiAnalysis(intake.id)
+        if (aiRequest.accepted) {
+          analyzing += 1
+        } else {
+          review += 1
+          await adminClient.from('archivos_ingesta').update({
+            estado: 'Revisión',
+            ai_estado: aiRequest.configured ? 'Error' : 'No configurado',
+            error_mensaje: aiRequest.configured ? 'No fue posible iniciar el análisis automático. Puede reintentarlo desde la cola de revisión.' : null,
+          }).eq('id', intake.id)
+        }
       } catch (fileError) {
         failures += 1
+        if (uploaded) await adminClient.storage.from('documentos').remove([storagePath])
         console.error(`Error al procesar ${file.name}:`, fileError)
       }
     }
 
+    const pending = analyzing + review
     const status = failures > 0 || pending > 0 ? 'Con observaciones' : 'Completado'
-    await adminClient.from('lotes_documentales').update({ clasificados: classified, pendientes: pending, errores: failures, estado: status, completado_at: new Date().toISOString() }).eq('id', batch.id)
-    await adminClient.from('auditoria_eventos').insert({ actor_user_id: actorUserId, accion: 'cargar_lote', entidad: 'lote_documental', entidad_id: batch.id, metadata: { total: files.length, clasificados: classified, pendientes: pending, errores: failures } })
-
-    for (const [companyId, count] of publishedByCompany.entries()) {
-      await notifyCompany({
-        adminClient,
-        empresaId: companyId,
-        event: 'documentos_lote_publicados',
-        subject: `${count} documento${count === 1 ? '' : 's'} nuevo${count === 1 ? '' : 's'} en su portal`,
-        title: 'SERCOPREV publicó nueva información',
-        paragraphs: [`Se incorporaron ${count} archivo${count === 1 ? '' : 's'} a la ficha documental de su empresa.`, 'Puede revisar y descargar los antecedentes desde el Portal de Clientes.'],
-        details: [{ label: 'Lote', value: batchName }, { label: 'Archivos publicados', value: String(count) }],
-        ctaLabel: 'Revisar documentos',
-        ctaUrl: `${process.env.APP_BASE_URL?.trim() || 'https://www.sercoprev.cl'}/dashboard/documentos`,
-      })
-    }
+    await adminClient.from('lotes_documentales').update({ clasificados: 0, pendientes: pending, errores: failures, estado: status, completado_at: analyzing === 0 ? new Date().toISOString() : null }).eq('id', batch.id)
+    await adminClient.from('auditoria_eventos').insert({
+      actor_user_id: actorUserId,
+      accion: 'cargar_lote_con_analisis_ia',
+      entidad: 'lote_documental',
+      entidad_id: batch.id,
+      module: 'Documentos',
+      description: 'Lote documental cargado para clasificación por contenido con inteligencia artificial.',
+      source: 'aplicacion',
+      metadata: { total: files.length, analizando: analyzing, revision: review, errores: failures },
+    })
 
     revalidatePath('/admin/documentos-masivos')
-    revalidatePath('/dashboard')
-    return { status: 'success', message: `Lote procesado: ${classified} publicados, ${pending} en revisión y ${failures} con error.`, batchId: batch.id }
+    const message = analyzing > 0
+      ? `Lote recibido: ${analyzing} archivo${analyzing === 1 ? '' : 's'} en análisis IA, ${review} en revisión y ${failures} con error.`
+      : `Lote recibido: ${review} archivo${review === 1 ? '' : 's'} en revisión y ${failures} con error.`
+    return { status: 'success', message, batchId: batch.id }
   } catch (error) {
     console.error('Error al procesar lote documental:', error)
     return { status: 'error', message: 'No fue posible procesar el lote documental.' }
   }
 }
 
+export async function reanalizarArchivoIngesta(formData: FormData) {
+  const { adminClient } = await requireAdmin(['Superadministrador', 'Administrador', 'Contador', 'Remuneraciones'])
+  const intakeId = clean(formData.get('ingesta_id'), 40)
+  if (!UUID_PATTERN.test(intakeId)) throw new Error('INVALID_INTAKE')
+  const { data: intake, error } = await adminClient.from('archivos_ingesta').select('id, documento_id').eq('id', intakeId).maybeSingle()
+  if (error || !intake || intake.documento_id) throw new Error('INTAKE_NOT_AVAILABLE')
+  await adminClient.from('archivos_ingesta').update({ estado: 'Analizando', ai_estado: 'Pendiente', error_mensaje: null }).eq('id', intakeId)
+  const request = await requestAiAnalysis(intakeId)
+  if (!request.accepted) {
+    await adminClient.from('archivos_ingesta').update({ estado: 'Revisión', ai_estado: request.configured ? 'Error' : 'No configurado', error_mensaje: request.configured ? 'No fue posible iniciar el análisis automático.' : 'Workers AI no está configurado.' }).eq('id', intakeId)
+  }
+  revalidatePath('/admin/documentos-masivos')
+}
+
 export async function confirmarArchivoIngesta(formData: FormData) {
   const { adminClient, actorUserId } = await requireAdmin(['Superadministrador', 'Administrador', 'Contador', 'Remuneraciones'])
   const intakeId = clean(formData.get('ingesta_id'), 40)
   const empresaId = clean(formData.get('empresa_id'), 40)
-  const categoria = clean(formData.get('categoria'), 40)
-  const periodo = clean(formData.get('periodo'), 20) || null
+  const typeCodeRaw = clean(formData.get('tipo_documento_codigo'), 80)
+  const periodoRaw = clean(formData.get('periodo'), 20)
+  const periodo = periodoRaw && PERIOD_PATTERN.test(periodoRaw) ? periodoRaw : null
   if (!UUID_PATTERN.test(intakeId) || !UUID_PATTERN.test(empresaId)) throw new Error('INVALID_INTAKE')
-  if (!['Impuestos', 'Remuneraciones', 'Legal', 'Contabilidad', 'Tributario', 'Laboral', 'Bancario', 'Contratos'].includes(categoria)) throw new Error('INVALID_CATEGORY')
+  if (!isDocumentTypeCode(typeCodeRaw) || typeCodeRaw === 'SIN_CLASIFICAR') throw new Error('INVALID_DOCUMENT_TYPE')
+  const typeCode: DocumentTypeCode = typeCodeRaw
+  if (DOCUMENT_TYPES[typeCode].periodRequired && !periodo) throw new Error('PERIOD_REQUIRED')
 
-  const { data: intake, error: intakeError } = await adminClient.from('archivos_ingesta').select('*').eq('id', intakeId).eq('estado', 'Revisión').single()
-  if (intakeError || !intake) throw new Error('INTAKE_NOT_AVAILABLE')
+  const { data: intake, error: intakeError } = await adminClient.from('archivos_ingesta').select('*').eq('id', intakeId).in('estado', ['Revisión', 'Analizando']).single()
+  if (intakeError || !intake || intake.documento_id) throw new Error('INTAKE_NOT_AVAILABLE')
 
   const targetPath = `${empresaId}/lotes/${intake.lote_id}/${crypto.randomUUID()}-${safeFilename(intake.nombre_original)}`
   const { error: moveError } = await adminClient.storage.from('documentos').move(intake.storage_path, targetPath)
   if (moveError) throw moveError
 
-  const { data: document, error: documentError } = await adminClient.from('documentos').insert({
-    empresa_id: empresaId,
-    nombre_original: intake.nombre_original,
-    storage_path: targetPath,
-    categoria,
-    periodo,
-    descripcion: 'Clasificación confirmada por el equipo SERCOPREV.',
-    uploaded_by: actorUserId,
-    mime_type: intake.mime_type,
-    file_size: intake.file_size,
-    visible_cliente: true,
-    lote_id: intake.lote_id,
-    clasificacion_estado: 'Confirmada',
-    rut_detectado: intake.rut_detectado,
-    fecha_documento: intake.fecha_sugerida,
-    fuente_carga: 'Masiva revisada',
-    metadata_clasificacion: { confianza_inicial: intake.confianza, razones: intake.razones, revisado_manualmente: true },
-  }).select('id').single()
-  if (documentError) {
+  try {
+    const { data: publication, error: documentError } = await adminClient.rpc('publicar_archivo_ingesta', {
+      p_ingesta_id: intakeId,
+      p_empresa_id: empresaId,
+      p_categoria: DOCUMENT_TYPES[typeCode].category,
+      p_tipo_documento_codigo: typeCode,
+      p_periodo: periodo,
+      p_fecha_documento: intake.fecha_sugerida,
+      p_target_storage_path: targetPath,
+      p_actor_user_id: actorUserId,
+      p_fuente_carga: 'Masiva revisada',
+      p_metadata: {
+        confianza_inicial: intake.confianza,
+        empresa_confianza: intake.empresa_confianza,
+        tipo_confianza: intake.tipo_confianza,
+        periodo_confianza: intake.periodo_confianza,
+        razones: intake.razones,
+        evidencias: intake.evidencias,
+        revisado_manualmente: true,
+      },
+    })
+    if (documentError) throw documentError
+    const result = parsePublicationResult(publication)
+    await removeReplacedStorageFiles(adminClient, actorUserId, empresaId, intakeId, result)
+
+    await notifyCompany({
+      adminClient,
+      empresaId,
+      event: typeCode === 'CARPETA_TRIBUTARIA' ? 'carpeta_tributaria_actualizada' : 'documento_publicado_revision',
+      subject: typeCode === 'CARPETA_TRIBUTARIA' ? 'Su Carpeta Tributaria fue actualizada' : `Nuevo documento disponible: ${intake.nombre_original}`,
+      title: typeCode === 'CARPETA_TRIBUTARIA' ? 'Carpeta Tributaria vigente' : 'Nueva información disponible en su portal',
+      paragraphs: typeCode === 'CARPETA_TRIBUTARIA'
+        ? ['SERCOPREV publicó la versión más reciente de la Carpeta Tributaria de su empresa.', 'La versión anterior fue reemplazada automáticamente para mantener una sola copia vigente.']
+        : ['SERCOPREV revisó y publicó un nuevo antecedente en la ficha documental de su empresa.'],
+      details: [
+        { label: 'Archivo', value: intake.nombre_original },
+        { label: 'Tipo', value: DOCUMENT_TYPES[typeCode].label },
+        { label: 'Periodo', value: periodo },
+      ],
+      ctaLabel: 'Abrir portal',
+      ctaUrl: `${process.env.APP_BASE_URL?.trim() || 'https://www.sercoprev.cl'}/dashboard/documentos`,
+    })
+  } catch (error) {
     await adminClient.storage.from('documentos').move(targetPath, intake.storage_path)
-    throw documentError
+    throw error
   }
-
-  await adminClient.from('archivos_ingesta').update({ empresa_id: empresaId, documento_id: document.id, storage_path: targetPath, categoria_sugerida: categoria, periodo_sugerido: periodo, estado: 'Clasificado', reviewed_at: new Date().toISOString(), reviewed_by: actorUserId }).eq('id', intakeId)
-  await adminClient.from('auditoria_eventos').insert({ actor_user_id: actorUserId, empresa_id: empresaId, accion: 'confirmar_clasificacion', entidad: 'archivo_ingesta', entidad_id: intakeId, metadata: { documento_id: document.id } })
-
-  await notifyCompany({
-    adminClient,
-    empresaId,
-    event: 'documento_publicado_revision',
-    subject: `Nuevo documento disponible: ${intake.nombre_original}`,
-    title: 'Nueva información disponible en su portal',
-    paragraphs: ['SERCOPREV revisó y publicó un nuevo antecedente en la ficha documental de su empresa.'],
-    details: [{ label: 'Archivo', value: intake.nombre_original }, { label: 'Categoría', value: categoria }, { label: 'Periodo', value: periodo }],
-    ctaLabel: 'Abrir portal',
-    ctaUrl: `${process.env.APP_BASE_URL?.trim() || 'https://www.sercoprev.cl'}/dashboard/documentos`,
-  })
 
   revalidatePath('/admin/documentos-masivos')
   revalidatePath('/dashboard')
+  revalidatePath('/dashboard/documentos')
 }
