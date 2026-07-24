@@ -4,7 +4,7 @@ import { getApplicationBaseUrl, getSupabasePublicConfig } from '@/utils/supabase
 
 export const dynamic = 'force-dynamic'
 
-const RELEASE = '2026-07-24-commercial-site-cms-1'
+const RELEASE = '2026-07-24-document-ai-tax-folder-1'
 const OFFICIAL_DATA_MAX_AGE_MS = 48 * 60 * 60 * 1000
 
 type QueryResult = { error: unknown }
@@ -205,6 +205,21 @@ export async function GET() {
       && migration.data?.filename === '202607230006_document_intake_queue.sql'
   })
 
+  const documentAiSchema = await safeCheck('DOCUMENT_AI_SCHEMA', async () => {
+    const supabase = createAdminClient()
+    const [intake, documents, migration] = await Promise.all([
+      supabase.from('archivos_ingesta').select('id, tipo_documento_sugerido, ai_estado, ai_proveedor, ai_modelo, ai_prompt_version, ai_intentos, empresa_confianza, tipo_confianza, periodo_confianza, evidencias, resultado_ia, texto_hash, archivo_hash').limit(1),
+      supabase.from('documentos').select('id, empresa_id, tipo_documento_codigo, archivo_hash').limit(1),
+      supabase.from('sercoprev_schema_migrations').select('filename').eq('filename', '202607240019_document_ai_and_tax_folder.sql').maybeSingle(),
+    ])
+    return !intake.error
+      && !documents.error
+      && !migration.error
+      && migration.data?.filename === '202607240019_document_ai_and_tax_folder.sql'
+  })
+
+  const documentAiTokenConfigured = Boolean(process.env.DOCUMENT_AI_TOKEN?.trim() || process.env.OFFICIAL_SYNC_TOKEN?.trim())
+
   const administrator = await safeCheck('ADMINISTRATOR', async () => {
     const directory = createAdminClient()
     const [directAdmin, staffAdmin] = await Promise.all([
@@ -238,6 +253,8 @@ export async function GET() {
     staffMfaSchema,
     staffMfaEmailDeliveryConfigured,
     documentIntakeSchema,
+    documentAiSchema,
+    documentAiTokenConfigured,
     administrator,
     documentStorage,
   }
