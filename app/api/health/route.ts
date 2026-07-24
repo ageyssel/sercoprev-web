@@ -4,7 +4,7 @@ import { getApplicationBaseUrl, getSupabasePublicConfig } from '@/utils/supabase
 
 export const dynamic = 'force-dynamic'
 
-const RELEASE = '2026-07-24-comprehensive-audit-rbac-1'
+const RELEASE = '2026-07-24-commercial-site-cms-1'
 const OFFICIAL_DATA_MAX_AGE_MS = 48 * 60 * 60 * 1000
 
 type QueryResult = { error: unknown }
@@ -54,10 +54,6 @@ export async function GET() {
     return !error
   })
 
-  // Cada bloque usa consultas representativas. La migración productiva valida
-  // exhaustivamente tablas, columnas y triggers antes de desplegar; el health
-  // comprueba aquí disponibilidad funcional sin superar el límite de
-  // subsolicitudes de Cloudflare Workers.
   const operationalSchema = await safeCheck('OPERATIONAL_SCHEMA', async () => {
     const supabase = createAdminClient()
     return allSucceeded(await Promise.all([
@@ -163,6 +159,22 @@ export async function GET() {
       && migration.data?.filename === '202607240016_comprehensive_audit_and_admin_rbac.sql'
   })
 
+  const commercialSiteSchema = await safeCheck('COMMERCIAL_SITE_SCHEMA', async () => {
+    const supabase = createAdminClient()
+    const [config, migration, bucket] = await Promise.all([
+      supabase.from('pagina_comercial_config').select('id, hero_title, reviews_enabled').eq('id', 'principal').maybeSingle(),
+      supabase.from('sercoprev_schema_migrations').select('filename').eq('filename', '202607240018_commercial_site_cms.sql').maybeSingle(),
+      supabase.storage.getBucket('pagina-comercial'),
+    ])
+    return !config.error
+      && config.data?.id === 'principal'
+      && !migration.error
+      && migration.data?.filename === '202607240018_commercial_site_cms.sql'
+      && !bucket.error
+      && bucket.data?.id === 'pagina-comercial'
+      && bucket.data.public === true
+  })
+
   const staffMfaSchema = await safeCheck('STAFF_MFA_SCHEMA', async () => {
     const supabase = createAdminClient()
     const [challenge, session, migration] = await Promise.all([
@@ -222,6 +234,7 @@ export async function GET() {
     closedRecordsProtectionSchema,
     userAccessSchema,
     auditTrailSchema,
+    commercialSiteSchema,
     staffMfaSchema,
     staffMfaEmailDeliveryConfigured,
     documentIntakeSchema,

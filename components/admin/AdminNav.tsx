@@ -38,6 +38,7 @@ const groups: Group[] = [
     label: 'Configuración',
     privilegedOnly: true,
     items: [
+      { href: '/admin/configuracion/pagina-comercial', label: 'Página comercial', icon: 'settings', badge: 'CMS' },
       { href: '/admin/usuarios', label: 'Usuarios y accesos', icon: 'shield' },
       { href: '/admin/auditoria', label: 'Auditoría', icon: 'tasks' },
     ],
