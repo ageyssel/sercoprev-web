@@ -1,0 +1,171 @@
+name: Deploy Commercial CMS Resume
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare-production
+  cancel-in-progress: true
+
+jobs:
+  deploy-and-certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 9021b712f9a73815e6b333a4870e0021
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      WHATSAPP_ACCESS_TOKEN: ${{ secrets.WHATSAPP_ACCESS_TOKEN }}
+      WHATSAPP_PHONE_NUMBER_ID: ${{ secrets.WHATSAPP_PHONE_NUMBER_ID }}
+
+    steps:
+      - name: Validate credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          test -n "${SUPABASE_SECRET_KEY:-}"
+          test -n "${RESEND_API_KEY:-}"
+
+      - name: Checkout exact latest main
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: main
+
+      - name: Confirm exact main, release and source content
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = '9c6c2febb10224617264bf38879c0bb5603c2bb9'
+          health_release=$(sed -n "s/^const RELEASE = '\([^']*\)'$/\1/p" app/api/health/route.ts)
+          version_release=$(sed -n "s/^const RELEASE = '\([^']*\)'$/\1/p" app/api/version/route.ts)
+          test "$health_release" = '2026-07-24-commercial-site-cms-1'
+          test "$health_release" = "$version_release"
+          echo "EXPECTED_RELEASE=$health_release" >> "$GITHUB_ENV"
+          grep -q 'René G. Morales C.' supabase/migrations/202607240018_commercial_site_cms.sql
+          grep -q 'Guillermo Paiguano' supabase/migrations/202607240018_commercial_site_cms.sql
+          grep -q 'José F. Quinchao G.' supabase/migrations/202607240018_commercial_site_cms.sql
+          grep -q 'Experiencias de clientes' supabase/migrations/202607240018_commercial_site_cms.sql
+          ! grep -Eq '\$70[.]?000|\$50[.]?000|\$10[.]?000|\$30[.]?000' supabase/migrations/202607240018_commercial_site_cms.sql
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund --silent
+
+      - name: Validate source and build Worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run lint
+          npx tsc --noEmit
+          npm run build:cloudflare
+          npx wrangler deploy --dry-run --outdir .wrangler-dry-run > /tmp/worker-size.log 2>&1
+          gzip_kib=$(sed -n 's/.*gzip: \([0-9.]*\) KiB.*/\1/p' /tmp/worker-size.log | tail -n 1)
+          test -n "$gzip_kib"
+          python - "$gzip_kib" <<'PY'
+          import sys
+          if float(sys.argv[1]) > 3000:
+              raise SystemExit('Worker exceeds Free plan compressed limit')
+          PY
+
+      - name: Prepare atomic secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, secrets
+          from pathlib import Path
+          values = {
+              'SUPABASE_SECRET_KEY': os.environ['SUPABASE_SECRET_KEY'],
+              'RESEND_API_KEY': os.environ['RESEND_API_KEY'],
+              'OFFICIAL_SYNC_TOKEN': secrets.token_urlsafe(48),
+          }
+          for name in ('WHATSAPP_ACCESS_TOKEN', 'WHATSAPP_PHONE_NUMBER_ID'):
+              value = os.environ.get(name, '').strip()
+              if value:
+                  values[name] = value
+          path = Path('/tmp/sercoprev-cloudflare-secrets.json')
+          path.write_text(json.dumps(values))
+          path.chmod(0o600)
+          PY
+
+      - name: Deploy exact main
+        shell: bash
+        run: |
+          set -euo pipefail
+          trap 'rm -f /tmp/sercoprev-cloudflare-secrets.json' EXIT
+          npx wrangler deploy --secrets-file /tmp/sercoprev-cloudflare-secrets.json
+
+      - name: Verify active bindings
+        shell: bash
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/sercoprev-web/settings"
+          curl -sS --max-time 30 -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" "$api" -o /tmp/settings.json
+          jq -e '.success == true' /tmp/settings.json >/dev/null
+          for name in NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY APP_BASE_URL RESEND_FROM_EMAIL NOTIFICATION_ADMIN_EMAILS SUPABASE_SECRET_KEY RESEND_API_KEY OFFICIAL_SYNC_TOKEN ASSETS WORKER_SELF_REFERENCE; do
+            jq -e --arg name "$name" '.result.bindings | any(.name == $name)' /tmp/settings.json >/dev/null
+          done
+
+      - name: Certify production
+        shell: bash
+        run: |
+          set -euo pipefail
+          healthy=false
+          checks=(
+            publicSupabaseConfig applicationBaseUrl database operationalSchema payrollSchema accountingSchema
+            officialIndicatorsSchema officialDataSchema officialDataHistorySchema officialDataFreshness
+            closedRecordsProtectionSchema userAccessSchema auditTrailSchema commercialSiteSchema staffMfaSchema
+            staffMfaEmailDeliveryConfigured documentIntakeSchema administrator documentStorage
+          )
+          for attempt in $(seq 1 60); do
+            nonce="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${attempt}"
+            home_status=$(curl -sS -L --max-time 25 -o /tmp/home.html -w '%{http_code}' "https://www.sercoprev.cl/?_verify=$nonce" || true)
+            login_status=$(curl -sS -L --max-time 25 -o /tmp/login.html -w '%{http_code}' "https://www.sercoprev.cl/login?_verify=$nonce" || true)
+            verify_status=$(curl -sS --max-time 25 -o /tmp/verify.html -w '%{http_code}' "https://www.sercoprev.cl/login/verificar-codigo?_verify=$nonce" || true)
+            cms_status=$(curl -sS --max-time 25 -o /tmp/cms.html -w '%{http_code}' "https://www.sercoprev.cl/admin/configuracion/pagina-comercial?_verify=$nonce" || true)
+            health_status=$(curl -sS --max-time 25 -o /tmp/health.json -w '%{http_code}' "https://www.sercoprev.cl/api/health?_verify=$nonce" || true)
+            version_status=$(curl -sS --max-time 25 -o /tmp/version.json -w '%{http_code}' "https://www.sercoprev.cl/api/version?_verify=$nonce" || true)
+            valid=true
+            [ "$home_status" = '200' ] || valid=false
+            [ "$login_status" = '200' ] || valid=false
+            { [ "$verify_status" = '302' ] || [ "$verify_status" = '307' ] || [ "$verify_status" = '308' ]; } || valid=false
+            { [ "$cms_status" = '302' ] || [ "$cms_status" = '307' ] || [ "$cms_status" = '308' ]; } || valid=false
+            [ "$health_status" = '200' ] || valid=false
+            [ "$version_status" = '200' ] || valid=false
+            grep -qi 'Nuestro equipo' /tmp/home.html || valid=false
+            grep -qi 'René G. Morales' /tmp/home.html || valid=false
+            grep -qi 'Guillermo Paiguano' /tmp/home.html || valid=false
+            grep -qi 'Experiencias de clientes' /tmp/home.html || valid=false
+            grep -qi 'Mostrar' /tmp/login.html || valid=false
+            ! grep -Eq '\$70[.]?000|\$50[.]?000|\$10[.]?000|\$30[.]?000' /tmp/home.html || valid=false
+            jq -e --arg release "$EXPECTED_RELEASE" '.status == "ok" and .release == $release' /tmp/health.json >/dev/null 2>&1 || valid=false
+            jq -e --arg release "$EXPECTED_RELEASE" '.service == "sercoprev-web" and .release == $release and .runtime == "cloudflare-workers"' /tmp/version.json >/dev/null 2>&1 || valid=false
+            for check in "${checks[@]}"; do
+              jq -e --arg check "$check" '.checks[$check] == true' /tmp/health.json >/dev/null 2>&1 || valid=false
+            done
+            if [ "$valid" = true ]; then healthy=true; break; fi
+            sleep 5
+          done
+          echo "GET / => ${home_status:-unknown}"
+          echo "GET /login => ${login_status:-unknown}"
+          echo "GET /login/verificar-codigo => ${verify_status:-unknown}"
+          echo "GET /admin/configuracion/pagina-comercial => ${cms_status:-unknown}"
+          echo "GET /api/health => ${health_status:-unknown}"
+          echo "GET /api/version => ${version_status:-unknown}"
+          cat /tmp/health.json 2>/dev/null || true
+          echo
+          cat /tmp/version.json 2>/dev/null || true
+          echo
+          test "$healthy" = true
