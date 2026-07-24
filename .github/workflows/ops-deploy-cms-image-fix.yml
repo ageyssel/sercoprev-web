@@ -25,7 +25,6 @@ jobs:
       WHATSAPP_PHONE_NUMBER_ID: ${{ secrets.WHATSAPP_PHONE_NUMBER_ID }}
       SUPABASE_URL: https://kxrxlygnhukfmdgqhoaz.supabase.co
       TARGET_TEAM_ID: df018b32-a946-478b-a633-d2e5491e810b
-      ORPHAN_PHOTO_NAME: fcb1e3e0-d45c-4bbf-b934-f9a8097657e5.png
 
     steps:
       - name: Validate credentials
@@ -86,7 +85,7 @@ jobs:
               raise SystemExit('Worker exceeds Free plan compressed limit')
           PY
 
-      - name: Repair orphaned team photo reference
+      - name: Validate or repair team photo reference
         shell: bash
         run: |
           set -euo pipefail
@@ -97,31 +96,39 @@ jobs:
             -o /tmp/team-before.json
           jq -e 'length == 1' /tmp/team-before.json >/dev/null
           photo_path=$(jq -r '.[0].foto_path // ""' /tmp/team-before.json)
+          photo_valid=false
 
           if [ -n "$photo_path" ]; then
             photo_url="${SUPABASE_URL}/storage/v1/object/public/pagina-comercial/${photo_path}"
-            photo_status=$(curl -sS -L --max-time 30 -o /tmp/photo-before.bin -w '%{http_code}' "$photo_url" || true)
-            if [ "$photo_status" != '200' ]; then
+            photo_status=$(curl -sS -L --max-time 30 -o /tmp/photo-before.bin -D /tmp/photo-before.headers -w '%{http_code}' "$photo_url" || true)
+            if [ "$photo_status" = '200' ] && grep -Eqi '^content-type: image/(png|jpeg|webp)' /tmp/photo-before.headers && [ -s /tmp/photo-before.bin ]; then
+              photo_valid=true
+              echo "PHOTO_PATH=$photo_path" >> "$GITHUB_ENV"
+              echo 'PHOTO_EXPECTED=true' >> "$GITHUB_ENV"
+              echo 'Existing team photo is valid and will be preserved.'
+            else
               curl -sS --max-time 30 \
                 -X PATCH \
                 -H "apikey: ${SUPABASE_SECRET_KEY}" \
                 -H "Authorization: Bearer ${SUPABASE_SECRET_KEY}" \
                 -H 'Content-Type: application/json' \
-                -H 'Prefer: return=representation' \
+                -H 'Prefer: return=minimal' \
                 "${SUPABASE_URL}/rest/v1/pagina_comercial_equipo?id=eq.${TARGET_TEAM_ID}" \
                 --data '{"foto_path":null}' \
-                -o /tmp/team-repaired.json
-              jq -e 'length == 1 and .[0].foto_path == null' /tmp/team-repaired.json >/dev/null
-              echo 'Removed orphaned photo reference; initials will be displayed until a new upload is made.'
+                -o /tmp/team-repair-response.json
             fi
           fi
 
-          curl -sS --max-time 30 \
-            -H "apikey: ${SUPABASE_SECRET_KEY}" \
-            -H "Authorization: Bearer ${SUPABASE_SECRET_KEY}" \
-            "${SUPABASE_URL}/rest/v1/pagina_comercial_equipo?id=eq.${TARGET_TEAM_ID}&select=id,nombre,foto_path" \
-            -o /tmp/team-after.json
-          jq -e 'length == 1 and .[0].foto_path == null' /tmp/team-after.json >/dev/null
+          if [ "$photo_valid" = false ]; then
+            echo 'PHOTO_EXPECTED=false' >> "$GITHUB_ENV"
+            curl -sS --max-time 30 \
+              -H "apikey: ${SUPABASE_SECRET_KEY}" \
+              -H "Authorization: Bearer ${SUPABASE_SECRET_KEY}" \
+              "${SUPABASE_URL}/rest/v1/pagina_comercial_equipo?id=eq.${TARGET_TEAM_ID}&select=id,foto_path" \
+              -o /tmp/team-after.json
+            jq -e 'length == 1 and .[0].foto_path == null' /tmp/team-after.json >/dev/null
+            echo 'Orphaned photo reference removed; initials will be displayed.'
+          fi
 
       - name: Prepare atomic secrets
         shell: bash
@@ -151,7 +158,7 @@ jobs:
           trap 'rm -f /tmp/sercoprev-cloudflare-secrets.json' EXIT
           npx wrangler deploy --secrets-file /tmp/sercoprev-cloudflare-secrets.json
 
-      - name: Certify production CSP and repaired content
+      - name: Certify production CSP and team image
         shell: bash
         run: |
           set -euo pipefail
@@ -168,14 +175,26 @@ jobs:
             grep -Eqi '^content-security-policy:.*img-src[^;]*https://kxrxlygnhukfmdgqhoaz[.]supabase[.]co' /tmp/home.headers || valid=false
             grep -qi 'Guillermo Paiguano' /tmp/home.html || valid=false
             grep -qi 'Rene G. Morales' /tmp/home.html || valid=false
-            ! grep -Fq "$ORPHAN_PHOTO_NAME" /tmp/home.html || valid=false
             jq -e '.status == "ok"' /tmp/health.json >/dev/null 2>&1 || valid=false
+
+            if [ "${PHOTO_EXPECTED}" = 'true' ]; then
+              photo_url="${SUPABASE_URL}/storage/v1/object/public/pagina-comercial/${PHOTO_PATH}"
+              photo_status=$(curl -sS -L --max-time 25 -o /tmp/prod-photo.bin -D /tmp/prod-photo.headers -w '%{http_code}' "$photo_url" || true)
+              [ "$photo_status" = '200' ] || valid=false
+              grep -Eqi '^content-type: image/(png|jpeg|webp)' /tmp/prod-photo.headers || valid=false
+              test -s /tmp/prod-photo.bin || valid=false
+              photo_name=$(basename "$PHOTO_PATH")
+              grep -Fq "$photo_name" /tmp/home.html || valid=false
+            fi
+
             if [ "$valid" = true ]; then healthy=true; break; fi
             sleep 5
           done
           echo "GET / => ${home_status:-unknown}"
           echo "GET /admin/configuracion/pagina-comercial => ${admin_status:-unknown}"
           echo "GET /api/health => ${health_status:-unknown}"
+          echo "PHOTO_EXPECTED=${PHOTO_EXPECTED}"
+          echo "GET photo => ${photo_status:-not-applicable}"
           grep -i '^content-security-policy:' /tmp/home.headers || true
           cat /tmp/health.json 2>/dev/null || true
           test "$healthy" = true
