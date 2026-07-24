@@ -93,7 +93,7 @@ export default async function DocumentIntakePage() {
           {intake.length === 0 ? <Empty text="No hay archivos pendientes de análisis o revisión." /> : intake.map((item) => {
             const company = one(item.empresa)
             const analyzing = item.estado === 'Analizando'
-            const suggestedType = item.tipo_documento_sugerido && item.tipo_documento_sugerido !== 'SIN_CLASIFICAR' ? item.tipo_documento_sugerido : 'CARPETA_TRIBUTARIA'
+            const suggestedType = item.tipo_documento_sugerido && item.tipo_documento_sugerido !== 'SIN_CLASIFICAR' ? item.tipo_documento_sugerido : 'OTRO_TRIBUTARIO'
             return (
               <article key={item.id} className={`rounded-2xl border p-4 sm:p-5 ${analyzing ? 'border-blue-200 bg-blue-50/40' : item.estado === 'Error' ? 'border-red-200 bg-red-50/40' : 'border-amber-200 bg-amber-50/40'}`}>
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
