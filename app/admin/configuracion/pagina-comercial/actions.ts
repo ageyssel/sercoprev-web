@@ -38,10 +38,17 @@ function items(value: unknown) {
     .slice(0, 20)
 }
 
-function returnToAdmin(message: string, status: 'success' | 'error' = 'success') {
+function returnToAdmin(message: string, status: 'success' | 'error' = 'success'): never {
   revalidatePath('/')
   revalidatePath('/admin/configuracion/pagina-comercial')
   redirect(`/admin/configuracion/pagina-comercial?${status}=${encodeURIComponent(message)}`)
+}
+
+function imageErrorMessage(error: unknown, fallback: string) {
+  if (!(error instanceof Error)) return fallback
+  if (error.message === 'IMAGE_TOO_LARGE') return 'La fotografía supera 5 MB.'
+  if (error.message === 'INVALID_IMAGE_TYPE') return 'La fotografía debe estar en formato JPG, PNG o WebP.'
+  return fallback
 }
 
 async function uploadImage(
@@ -116,9 +123,14 @@ export async function crearServicioComercial(formData: FormData) {
     orden: integer(formData.get('orden'), 0),
     activo: checkbox(formData, 'activo'),
   }
-  if (payload.titulo.length < 2 || payload.descripcion.length < 2 || payload.items.length === 0) returnToAdmin('Complete título, descripción y al menos un servicio.', 'error')
+  if (payload.titulo.length < 2 || payload.descripcion.length < 2 || payload.items.length === 0) {
+    returnToAdmin('Complete título, descripción y al menos un servicio.', 'error')
+  }
   const { error } = await adminClient.from('pagina_comercial_servicios').insert(payload)
-  if (error) returnToAdmin('No fue posible crear el servicio.', 'error')
+  if (error) {
+    console.error('COMMERCIAL_SERVICE_CREATE_FAILED', error)
+    returnToAdmin('No fue posible crear el servicio.', 'error')
+  }
   returnToAdmin('Servicio comercial creado.')
 }
 
@@ -134,9 +146,14 @@ export async function actualizarServicioComercial(formData: FormData) {
     orden: integer(formData.get('orden'), 0),
     activo: checkbox(formData, 'activo'),
   }
-  if (payload.titulo.length < 2 || payload.descripcion.length < 2 || payload.items.length === 0) returnToAdmin('Complete todos los datos del servicio.', 'error')
+  if (payload.titulo.length < 2 || payload.descripcion.length < 2 || payload.items.length === 0) {
+    returnToAdmin('Complete todos los datos del servicio.', 'error')
+  }
   const { error } = await adminClient.from('pagina_comercial_servicios').update(payload).eq('id', id)
-  if (error) returnToAdmin('No fue posible actualizar el servicio.', 'error')
+  if (error) {
+    console.error('COMMERCIAL_SERVICE_UPDATE_FAILED', error)
+    returnToAdmin('No fue posible actualizar el servicio.', 'error')
+  }
   returnToAdmin('Servicio comercial actualizado.')
 }
 
@@ -145,75 +162,104 @@ export async function eliminarServicioComercial(formData: FormData) {
   const id = clean(formData.get('id'), 40)
   if (!UUID_PATTERN.test(id)) returnToAdmin('Servicio inválido.', 'error')
   const { error } = await adminClient.from('pagina_comercial_servicios').delete().eq('id', id)
-  if (error) returnToAdmin('No fue posible eliminar el servicio.', 'error')
+  if (error) {
+    console.error('COMMERCIAL_SERVICE_DELETE_FAILED', error)
+    returnToAdmin('No fue posible eliminar el servicio.', 'error')
+  }
   returnToAdmin('Servicio eliminado.')
 }
 
 export async function crearIntegranteEquipo(formData: FormData) {
   const { adminClient } = await requireAdmin([...ADMIN_ROLES])
   const id = crypto.randomUUID()
+  const payload = {
+    id,
+    nombre: clean(formData.get('nombre'), 160),
+    cargo: clean(formData.get('cargo'), 200),
+    profesion: clean(formData.get('profesion'), 160) || null,
+    descripcion: multiline(formData.get('descripcion'), 1200) || null,
+    foto_alt: clean(formData.get('foto_alt'), 240) || null,
+    orden: integer(formData.get('orden'), 0),
+    activo: checkbox(formData, 'activo'),
+  }
+  if (payload.nombre.length < 2 || payload.cargo.length < 2) {
+    returnToAdmin('Complete nombre y cargo del integrante.', 'error')
+  }
+
   let photoPath: string | null = null
   try {
     photoPath = await uploadImage(adminClient, formData.get('foto') as File | null, 'equipo', id)
-    const payload = {
-      id,
-      nombre: clean(formData.get('nombre'), 160),
-      cargo: clean(formData.get('cargo'), 200),
-      profesion: clean(formData.get('profesion'), 160) || null,
-      descripcion: multiline(formData.get('descripcion'), 1200) || null,
-      foto_path: photoPath,
-      foto_alt: clean(formData.get('foto_alt'), 240) || null,
-      orden: integer(formData.get('orden'), 0),
-      activo: checkbox(formData, 'activo'),
-    }
-    if (payload.nombre.length < 2 || payload.cargo.length < 2) returnToAdmin('Complete nombre y cargo del integrante.', 'error')
-    const { error } = await adminClient.from('pagina_comercial_equipo').insert(payload)
+    const { error } = await adminClient.from('pagina_comercial_equipo').insert({ ...payload, foto_path: photoPath })
     if (error) throw error
-    returnToAdmin('Integrante agregado al equipo.')
   } catch (error) {
     await removeImage(adminClient, photoPath)
     console.error('COMMERCIAL_TEAM_CREATE_FAILED', error)
-    returnToAdmin(error instanceof Error && error.message === 'IMAGE_TOO_LARGE' ? 'La fotografía supera 5 MB.' : 'No fue posible agregar al integrante.', 'error')
+    returnToAdmin(imageErrorMessage(error, 'No fue posible agregar al integrante.'), 'error')
   }
+
+  returnToAdmin('Integrante agregado al equipo.')
 }
 
 export async function actualizarIntegranteEquipo(formData: FormData) {
   const { adminClient } = await requireAdmin([...ADMIN_ROLES])
   const id = clean(formData.get('id'), 40)
   if (!UUID_PATTERN.test(id)) returnToAdmin('Integrante inválido.', 'error')
-  const { data: current } = await adminClient.from('pagina_comercial_equipo').select('foto_path').eq('id', id).maybeSingle()
+
+  const payload = {
+    nombre: clean(formData.get('nombre'), 160),
+    cargo: clean(formData.get('cargo'), 200),
+    profesion: clean(formData.get('profesion'), 160) || null,
+    descripcion: multiline(formData.get('descripcion'), 1200) || null,
+    foto_alt: clean(formData.get('foto_alt'), 240) || null,
+    orden: integer(formData.get('orden'), 0),
+    activo: checkbox(formData, 'activo'),
+  }
+  if (payload.nombre.length < 2 || payload.cargo.length < 2) {
+    returnToAdmin('Complete nombre y cargo del integrante.', 'error')
+  }
+
+  const { data: current, error: currentError } = await adminClient
+    .from('pagina_comercial_equipo')
+    .select('foto_path')
+    .eq('id', id)
+    .maybeSingle()
+  if (currentError || !current) {
+    console.error('COMMERCIAL_TEAM_CURRENT_READ_FAILED', currentError)
+    returnToAdmin('No fue posible encontrar al integrante que desea actualizar.', 'error')
+  }
+
   let newPath: string | null = null
   try {
     newPath = await uploadImage(adminClient, formData.get('foto') as File | null, 'equipo', id)
-    const payload = {
-      nombre: clean(formData.get('nombre'), 160),
-      cargo: clean(formData.get('cargo'), 200),
-      profesion: clean(formData.get('profesion'), 160) || null,
-      descripcion: multiline(formData.get('descripcion'), 1200) || null,
-      foto_path: newPath ?? current?.foto_path ?? null,
-      foto_alt: clean(formData.get('foto_alt'), 240) || null,
-      orden: integer(formData.get('orden'), 0),
-      activo: checkbox(formData, 'activo'),
-    }
-    if (payload.nombre.length < 2 || payload.cargo.length < 2) returnToAdmin('Complete nombre y cargo del integrante.', 'error')
-    const { error } = await adminClient.from('pagina_comercial_equipo').update(payload).eq('id', id)
+    const { error } = await adminClient
+      .from('pagina_comercial_equipo')
+      .update({ ...payload, foto_path: newPath ?? current.foto_path ?? null })
+      .eq('id', id)
     if (error) throw error
-    if (newPath && current?.foto_path) await removeImage(adminClient, current.foto_path)
-    returnToAdmin('Integrante actualizado.')
+    if (newPath && current.foto_path && current.foto_path !== newPath) await removeImage(adminClient, current.foto_path)
   } catch (error) {
     await removeImage(adminClient, newPath)
     console.error('COMMERCIAL_TEAM_UPDATE_FAILED', error)
-    returnToAdmin(error instanceof Error && error.message === 'IMAGE_TOO_LARGE' ? 'La fotografía supera 5 MB.' : 'No fue posible actualizar al integrante.', 'error')
+    returnToAdmin(imageErrorMessage(error, 'No fue posible actualizar al integrante.'), 'error')
   }
+
+  returnToAdmin('Integrante actualizado.')
 }
 
 export async function eliminarIntegranteEquipo(formData: FormData) {
   const { adminClient } = await requireAdmin([...ADMIN_ROLES])
   const id = clean(formData.get('id'), 40)
   if (!UUID_PATTERN.test(id)) returnToAdmin('Integrante inválido.', 'error')
-  const { data } = await adminClient.from('pagina_comercial_equipo').select('foto_path').eq('id', id).maybeSingle()
+  const { data, error: readError } = await adminClient.from('pagina_comercial_equipo').select('foto_path').eq('id', id).maybeSingle()
+  if (readError) {
+    console.error('COMMERCIAL_TEAM_DELETE_READ_FAILED', readError)
+    returnToAdmin('No fue posible encontrar al integrante.', 'error')
+  }
   const { error } = await adminClient.from('pagina_comercial_equipo').delete().eq('id', id)
-  if (error) returnToAdmin('No fue posible eliminar al integrante.', 'error')
+  if (error) {
+    console.error('COMMERCIAL_TEAM_DELETE_FAILED', error)
+    returnToAdmin('No fue posible eliminar al integrante.', 'error')
+  }
   await removeImage(adminClient, data?.foto_path)
   returnToAdmin('Integrante eliminado.')
 }
@@ -221,70 +267,96 @@ export async function eliminarIntegranteEquipo(formData: FormData) {
 export async function crearResenaComercial(formData: FormData) {
   const { adminClient } = await requireAdmin([...ADMIN_ROLES])
   const id = crypto.randomUUID()
+  const payload = {
+    id,
+    nombre_cliente: clean(formData.get('nombre_cliente'), 160),
+    empresa: clean(formData.get('empresa'), 200) || null,
+    cargo: clean(formData.get('cargo'), 160) || null,
+    resena: multiline(formData.get('resena'), 2000),
+    foto_alt: clean(formData.get('foto_alt'), 240) || null,
+    calificacion: Math.min(5, Math.max(1, integer(formData.get('calificacion'), 5))),
+    orden: integer(formData.get('orden'), 0),
+    activo: checkbox(formData, 'activo'),
+  }
+  if (payload.nombre_cliente.length < 2 || payload.resena.length < 10) {
+    returnToAdmin('Complete el nombre y una reseña de al menos 10 caracteres.', 'error')
+  }
+
   let photoPath: string | null = null
   try {
     photoPath = await uploadImage(adminClient, formData.get('foto') as File | null, 'resenas', id)
-    const payload = {
-      id,
-      nombre_cliente: clean(formData.get('nombre_cliente'), 160),
-      empresa: clean(formData.get('empresa'), 200) || null,
-      cargo: clean(formData.get('cargo'), 160) || null,
-      resena: multiline(formData.get('resena'), 2000),
-      foto_path: photoPath,
-      foto_alt: clean(formData.get('foto_alt'), 240) || null,
-      calificacion: Math.min(5, Math.max(1, integer(formData.get('calificacion'), 5))),
-      orden: integer(formData.get('orden'), 0),
-      activo: checkbox(formData, 'activo'),
-    }
-    if (payload.nombre_cliente.length < 2 || payload.resena.length < 10) returnToAdmin('Complete el nombre y una reseña de al menos 10 caracteres.', 'error')
-    const { error } = await adminClient.from('pagina_comercial_resenas').insert(payload)
+    const { error } = await adminClient.from('pagina_comercial_resenas').insert({ ...payload, foto_path: photoPath })
     if (error) throw error
-    returnToAdmin('Reseña agregada.')
   } catch (error) {
     await removeImage(adminClient, photoPath)
     console.error('COMMERCIAL_REVIEW_CREATE_FAILED', error)
-    returnToAdmin(error instanceof Error && error.message === 'IMAGE_TOO_LARGE' ? 'La fotografía supera 5 MB.' : 'No fue posible agregar la reseña.', 'error')
+    returnToAdmin(imageErrorMessage(error, 'No fue posible agregar la reseña.'), 'error')
   }
+
+  returnToAdmin('Reseña agregada.')
 }
 
 export async function actualizarResenaComercial(formData: FormData) {
   const { adminClient } = await requireAdmin([...ADMIN_ROLES])
   const id = clean(formData.get('id'), 40)
   if (!UUID_PATTERN.test(id)) returnToAdmin('Reseña inválida.', 'error')
-  const { data: current } = await adminClient.from('pagina_comercial_resenas').select('foto_path').eq('id', id).maybeSingle()
+
+  const payload = {
+    nombre_cliente: clean(formData.get('nombre_cliente'), 160),
+    empresa: clean(formData.get('empresa'), 200) || null,
+    cargo: clean(formData.get('cargo'), 160) || null,
+    resena: multiline(formData.get('resena'), 2000),
+    foto_alt: clean(formData.get('foto_alt'), 240) || null,
+    calificacion: Math.min(5, Math.max(1, integer(formData.get('calificacion'), 5))),
+    orden: integer(formData.get('orden'), 0),
+    activo: checkbox(formData, 'activo'),
+  }
+  if (payload.nombre_cliente.length < 2 || payload.resena.length < 10) {
+    returnToAdmin('Complete correctamente la reseña.', 'error')
+  }
+
+  const { data: current, error: currentError } = await adminClient
+    .from('pagina_comercial_resenas')
+    .select('foto_path')
+    .eq('id', id)
+    .maybeSingle()
+  if (currentError || !current) {
+    console.error('COMMERCIAL_REVIEW_CURRENT_READ_FAILED', currentError)
+    returnToAdmin('No fue posible encontrar la reseña que desea actualizar.', 'error')
+  }
+
   let newPath: string | null = null
   try {
     newPath = await uploadImage(adminClient, formData.get('foto') as File | null, 'resenas', id)
-    const payload = {
-      nombre_cliente: clean(formData.get('nombre_cliente'), 160),
-      empresa: clean(formData.get('empresa'), 200) || null,
-      cargo: clean(formData.get('cargo'), 160) || null,
-      resena: multiline(formData.get('resena'), 2000),
-      foto_path: newPath ?? current?.foto_path ?? null,
-      foto_alt: clean(formData.get('foto_alt'), 240) || null,
-      calificacion: Math.min(5, Math.max(1, integer(formData.get('calificacion'), 5))),
-      orden: integer(formData.get('orden'), 0),
-      activo: checkbox(formData, 'activo'),
-    }
-    if (payload.nombre_cliente.length < 2 || payload.resena.length < 10) returnToAdmin('Complete correctamente la reseña.', 'error')
-    const { error } = await adminClient.from('pagina_comercial_resenas').update(payload).eq('id', id)
+    const { error } = await adminClient
+      .from('pagina_comercial_resenas')
+      .update({ ...payload, foto_path: newPath ?? current.foto_path ?? null })
+      .eq('id', id)
     if (error) throw error
-    if (newPath && current?.foto_path) await removeImage(adminClient, current.foto_path)
-    returnToAdmin('Reseña actualizada.')
+    if (newPath && current.foto_path && current.foto_path !== newPath) await removeImage(adminClient, current.foto_path)
   } catch (error) {
     await removeImage(adminClient, newPath)
     console.error('COMMERCIAL_REVIEW_UPDATE_FAILED', error)
-    returnToAdmin(error instanceof Error && error.message === 'IMAGE_TOO_LARGE' ? 'La fotografía supera 5 MB.' : 'No fue posible actualizar la reseña.', 'error')
+    returnToAdmin(imageErrorMessage(error, 'No fue posible actualizar la reseña.'), 'error')
   }
+
+  returnToAdmin('Reseña actualizada.')
 }
 
 export async function eliminarResenaComercial(formData: FormData) {
   const { adminClient } = await requireAdmin([...ADMIN_ROLES])
   const id = clean(formData.get('id'), 40)
   if (!UUID_PATTERN.test(id)) returnToAdmin('Reseña inválida.', 'error')
-  const { data } = await adminClient.from('pagina_comercial_resenas').select('foto_path').eq('id', id).maybeSingle()
+  const { data, error: readError } = await adminClient.from('pagina_comercial_resenas').select('foto_path').eq('id', id).maybeSingle()
+  if (readError) {
+    console.error('COMMERCIAL_REVIEW_DELETE_READ_FAILED', readError)
+    returnToAdmin('No fue posible encontrar la reseña.', 'error')
+  }
   const { error } = await adminClient.from('pagina_comercial_resenas').delete().eq('id', id)
-  if (error) returnToAdmin('No fue posible eliminar la reseña.', 'error')
+  if (error) {
+    console.error('COMMERCIAL_REVIEW_DELETE_FAILED', error)
+    returnToAdmin('No fue posible eliminar la reseña.', 'error')
+  }
   await removeImage(adminClient, data?.foto_path)
   returnToAdmin('Reseña eliminada.')
 }
