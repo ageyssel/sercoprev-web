@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { AppIcon } from '@/components/AppIcon'
 import { BrandLogo } from '@/components/BrandLogo'
+import { PasswordInput } from '@/components/PasswordInput'
 import { SubmitButton } from '@/app/admin/components/SubmitButton'
 import { login } from './actions'
 
@@ -29,7 +30,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
 
             <form action={login} className="mt-8 grid gap-5">
               <label className="grid gap-2 text-sm font-bold text-slate-700">Correo electrónico<div className="relative"><AppIcon name="inbox" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input name="email" type="email" required autoComplete="email" placeholder="cliente@empresa.cl" className="h-12 w-full rounded-xl border border-slate-300 bg-white pl-10 pr-3 text-sm font-medium text-[#17324a] outline-none focus:border-[#134b78] focus:ring-4 focus:ring-[#134b78]/10" /></div></label>
-              <label className="grid gap-2 text-sm font-bold text-slate-700">Contraseña<div className="relative"><AppIcon name="shield" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input name="password" type="password" required autoComplete="current-password" placeholder="••••••••••••" className="h-12 w-full rounded-xl border border-slate-300 bg-white pl-10 pr-3 text-sm font-medium text-[#17324a] outline-none focus:border-[#134b78] focus:ring-4 focus:ring-[#134b78]/10" /></div></label>
+              <label className="grid gap-2 text-sm font-bold text-slate-700">Contraseña<PasswordInput /></label>
 
               <div className="rounded-xl border border-slate-200 bg-[#f8fafb] px-4 py-3 text-xs font-semibold leading-5 text-slate-600"><strong className="text-[#17324a]">Personal interno:</strong> después de validar la contraseña enviaremos un código de seguridad al correo registrado. La verificación autoriza este navegador durante 24 horas.</div>
 
