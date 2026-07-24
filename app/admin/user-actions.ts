@@ -109,6 +109,7 @@ export async function crearUsuarioEquipo(
     await adminClient.from('auditoria_eventos').insert({ actor_user_id: actorUserId, accion: 'crear', entidad: 'usuario_organizacion', entidad_id: profile.id, metadata: { rol, email, email_enviado: emailSent } })
 
     revalidatePath('/admin/usuarios')
+    revalidatePath('/admin/auditoria')
     revalidatePath('/admin/notificaciones')
     return { status: 'success', message: emailSent ? 'Usuario del equipo creado y acceso enviado por correo.' : 'Usuario creado. El correo no pudo enviarse; revise Notificaciones y la configuración de Resend.' }
   } catch (error) {
@@ -122,7 +123,7 @@ export async function crearUsuarioCliente(
   formData: FormData,
 ): Promise<UserActionState> {
   try {
-    const { adminClient, actorUserId } = await requireAdmin(['Superadministrador', 'Administrador', 'Contador'])
+    const { adminClient, actorUserId } = await requireAdmin(['Superadministrador', 'Administrador'])
     const empresaId = clean(formData.get('empresa_id'), 40)
     const nombre = clean(formData.get('nombre'), 160)
     const email = clean(formData.get('email'), 254).toLowerCase()
@@ -171,6 +172,7 @@ export async function crearUsuarioCliente(
     await adminClient.from('auditoria_eventos').insert({ actor_user_id: actorUserId, empresa_id: empresaId, accion: 'crear', entidad: 'empresa_usuario', entidad_id: membership.id, metadata: { rol, email, email_enviado: emailSent } })
 
     revalidatePath('/admin/usuarios')
+    revalidatePath('/admin/auditoria')
     revalidatePath(`/admin/clientes/${empresaId}`)
     revalidatePath('/admin/notificaciones')
     return { status: 'success', message: emailSent ? 'Usuario del cliente creado y acceso enviado por correo.' : 'Usuario creado. El correo no pudo enviarse; revise Notificaciones y Resend.' }
@@ -227,6 +229,7 @@ export async function cambiarEstadoUsuario(formData: FormData) {
   }
 
   revalidatePath('/admin/usuarios')
+  revalidatePath('/admin/auditoria')
 }
 
 async function loadResetProfile(
@@ -317,5 +320,6 @@ export async function restablecerAccesoUsuario(formData: FormData) {
     metadata: { email_enviado: emailSent },
   })
   revalidatePath('/admin/usuarios')
+  revalidatePath('/admin/auditoria')
   revalidatePath('/admin/notificaciones')
 }
