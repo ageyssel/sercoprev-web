@@ -1,0 +1,272 @@
+name: Deploy Commercial CMS Final
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare-production
+  cancel-in-progress: true
+
+jobs:
+  deploy-and-certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 9021b712f9a73815e6b333a4870e0021
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+      SUPABASE_DB_URL_SECRET: ${{ secrets.SUPABASE_DB_URL }}
+      SUPABASE_DATABASE_URL_SECRET: ${{ secrets.SUPABASE_DATABASE_URL }}
+      DATABASE_URL_SECRET: ${{ secrets.DATABASE_URL }}
+      POSTGRES_URL_SECRET: ${{ secrets.POSTGRES_URL }}
+      SUPABASE_DB_PASSWORD_SECRET: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      SUPABASE_DATABASE_PASSWORD_SECRET: ${{ secrets.SUPABASE_DATABASE_PASSWORD }}
+      POSTGRES_PASSWORD_SECRET: ${{ secrets.POSTGRES_PASSWORD }}
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      WHATSAPP_ACCESS_TOKEN: ${{ secrets.WHATSAPP_ACCESS_TOKEN }}
+      WHATSAPP_PHONE_NUMBER_ID: ${{ secrets.WHATSAPP_PHONE_NUMBER_ID }}
+
+    steps:
+      - name: Validate credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          test -n "${SUPABASE_SECRET_KEY:-}"
+          test -n "${RESEND_API_KEY:-}"
+          test -n "${SUPABASE_DB_URL_SECRET:-}${SUPABASE_DATABASE_URL_SECRET:-}${DATABASE_URL_SECRET:-}${POSTGRES_URL_SECRET:-}${SUPABASE_DB_PASSWORD_SECRET:-}${SUPABASE_DATABASE_PASSWORD_SECRET:-}${POSTGRES_PASSWORD_SECRET:-}"
+
+      - name: Checkout exact latest main
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: main
+
+      - name: Confirm exact main and release
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = '9c6c2febb10224617264bf38879c0bb5603c2bb9'
+          health_release=$(sed -n "s/^const RELEASE = '\([^']*\)'$/\1/p" app/api/health/route.ts)
+          version_release=$(sed -n "s/^const RELEASE = '\([^']*\)'$/\1/p" app/api/version/route.ts)
+          test "$health_release" = '2026-07-24-commercial-site-cms-1'
+          test "$health_release" = "$version_release"
+          echo "EXPECTED_RELEASE=$health_release" >> "$GITHUB_ENV"
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund --silent
+
+      - name: Install PostgreSQL client
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends postgresql-client
+          fi
+
+      - name: Resolve Supabase database connection
+        shell: bash
+        run: |
+          set -euo pipefail
+          raw=''
+          for value in "${SUPABASE_DB_URL_SECRET:-}" "${SUPABASE_DATABASE_URL_SECRET:-}" "${DATABASE_URL_SECRET:-}" "${POSTGRES_URL_SECRET:-}"; do
+            if [ -n "$value" ]; then raw="$value"; break; fi
+          done
+          raw=$(RAW="$raw" python - <<'PY'
+          import os
+          value = os.environ.get('RAW', '').strip()
+          if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+              value = value[1:-1].strip()
+          print(value, end='')
+          PY
+          )
+          password=''
+          for value in "${SUPABASE_DB_PASSWORD_SECRET:-}" "${SUPABASE_DATABASE_PASSWORD_SECRET:-}" "${POSTGRES_PASSWORD_SECRET:-}"; do
+            if [ -n "$value" ]; then password="$value"; break; fi
+          done
+          if [[ "$raw" == postgresql://* || "$raw" == postgres://* ]]; then
+            echo "::add-mask::$raw"
+            if psql "$raw" -v ON_ERROR_STOP=1 -Atqc 'select 1' >/dev/null 2>&1; then
+              echo "SUPABASE_DB_URL=$raw" >> "$GITHUB_ENV"
+              exit 0
+            fi
+            extracted=$(RAW="$raw" python - <<'PY'
+          import os
+          from urllib.parse import unquote, urlparse
+          value = unquote(urlparse(os.environ['RAW']).password or '')
+          print('' if value.upper() in {'YOUR-PASSWORD', '[YOUR-PASSWORD]', 'PASSWORD', '[PASSWORD]'} else value, end='')
+          PY
+            )
+            [ -z "$password" ] && password="$extracted"
+          elif [ -n "$raw" ] && [ -z "$password" ]; then
+            password="$raw"
+          fi
+          test -n "$password"
+          echo "::add-mask::$password"
+          encoded=$(PASSWORD="$password" python - <<'PY'
+          import os
+          from urllib.parse import quote
+          print(quote(os.environ['PASSWORD'], safe=''), end='')
+          PY
+          )
+          project_ref='kxrxlygnhukfmdgqhoaz'
+          regions=(sa-east-1 us-east-1 us-east-2 us-west-1 us-west-2 ca-central-1 eu-west-1 eu-west-2 eu-central-1 ap-south-1 ap-southeast-1 ap-southeast-2 ap-northeast-1 ap-northeast-2)
+          for region in "${regions[@]}"; do
+            for cluster in 0 1 2; do
+              for port in 5432 6543; do
+                candidate="postgresql://postgres.${project_ref}:${encoded}@aws-${cluster}-${region}.pooler.supabase.com:${port}/postgres?sslmode=require&connect_timeout=6"
+                echo "::add-mask::$candidate"
+                if psql "$candidate" -v ON_ERROR_STOP=1 -Atqc 'select 1' >/dev/null 2>&1; then
+                  echo "SUPABASE_DB_URL=$candidate" >> "$GITHUB_ENV"
+                  exit 0
+                fi
+              done
+            done
+          done
+          exit 1
+
+      - name: Verify CMS and exact price exclusion
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -Atqc "
+            select case when
+              exists (select 1 from public.sercoprev_schema_migrations where filename = '202607240018_commercial_site_cms.sql')
+              and exists (select 1 from public.pagina_comercial_config where id = 'principal' and reviews_enabled = true)
+              and (select count(*) from public.pagina_comercial_servicios where activo = true) >= 5
+              and (select count(*) from public.pagina_comercial_equipo where activo = true) >= 7
+              and (select string_agg(nombre, '|' order by orden, nombre) from (select nombre, orden from public.pagina_comercial_equipo where activo = true order by orden, nombre limit 3) q)
+                  = 'René G. Morales C.|Guillermo Paiguano|José F. Quinchao G.'
+              and exists (select 1 from storage.buckets where id = 'pagina-comercial' and public = true and file_size_limit = 5242880)
+              and exists (select 1 from pg_trigger where not tgisinternal and tgname = 'audit_change_pagina_comercial_config')
+              and exists (select 1 from pg_trigger where not tgisinternal and tgname = 'audit_change_pagina_comercial_servicios')
+              and exists (select 1 from pg_trigger where not tgisinternal and tgname = 'audit_change_pagina_comercial_equipo')
+              and exists (select 1 from pg_trigger where not tgisinternal and tgname = 'audit_change_pagina_comercial_resenas')
+              and not exists (
+                select 1
+                from public.pagina_comercial_servicios s
+                where lower(s.titulo || ' ' || s.descripcion || ' ' || array_to_string(s.items, ' ')) like any (array[
+                  '%$70.000%', '%$50.000%', '%$10.000%', '%$30.000%',
+                  '%70000%', '%50000%', '%10000%', '%30000%',
+                  '%honorarios mensuales%', '%por trabajador contratado%', '%por prestador de servicios%'
+                ])
+              )
+            then 1 else 0 end;" | grep -qx '1'
+
+      - name: Validate source and build Worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run lint
+          npx tsc --noEmit
+          npm run build:cloudflare
+          npx wrangler deploy --dry-run --outdir .wrangler-dry-run > /tmp/worker-size.log 2>&1
+          gzip_kib=$(sed -n 's/.*gzip: \([0-9.]*\) KiB.*/\1/p' /tmp/worker-size.log | tail -n 1)
+          test -n "$gzip_kib"
+          python - "$gzip_kib" <<'PY'
+          import sys
+          if float(sys.argv[1]) > 3000:
+              raise SystemExit('Worker exceeds Free plan compressed limit')
+          PY
+
+      - name: Prepare atomic secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, secrets
+          from pathlib import Path
+          values = {
+              'SUPABASE_SECRET_KEY': os.environ['SUPABASE_SECRET_KEY'],
+              'RESEND_API_KEY': os.environ['RESEND_API_KEY'],
+              'OFFICIAL_SYNC_TOKEN': secrets.token_urlsafe(48),
+          }
+          for name in ('WHATSAPP_ACCESS_TOKEN', 'WHATSAPP_PHONE_NUMBER_ID'):
+              value = os.environ.get(name, '').strip()
+              if value:
+                  values[name] = value
+          path = Path('/tmp/sercoprev-cloudflare-secrets.json')
+          path.write_text(json.dumps(values))
+          path.chmod(0o600)
+          PY
+
+      - name: Deploy exact main
+        shell: bash
+        run: |
+          set -euo pipefail
+          trap 'rm -f /tmp/sercoprev-cloudflare-secrets.json' EXIT
+          npx wrangler deploy --secrets-file /tmp/sercoprev-cloudflare-secrets.json
+
+      - name: Verify active bindings
+        shell: bash
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/sercoprev-web/settings"
+          curl -sS --max-time 30 -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" "$api" -o /tmp/settings.json
+          jq -e '.success == true' /tmp/settings.json >/dev/null
+          for name in NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY APP_BASE_URL RESEND_FROM_EMAIL NOTIFICATION_ADMIN_EMAILS SUPABASE_SECRET_KEY RESEND_API_KEY OFFICIAL_SYNC_TOKEN ASSETS WORKER_SELF_REFERENCE; do
+            jq -e --arg name "$name" '.result.bindings | any(.name == $name)' /tmp/settings.json >/dev/null
+          done
+
+      - name: Certify production
+        shell: bash
+        run: |
+          set -euo pipefail
+          healthy=false
+          checks=(
+            publicSupabaseConfig applicationBaseUrl database operationalSchema payrollSchema accountingSchema
+            officialIndicatorsSchema officialDataSchema officialDataHistorySchema officialDataFreshness
+            closedRecordsProtectionSchema userAccessSchema auditTrailSchema commercialSiteSchema staffMfaSchema
+            staffMfaEmailDeliveryConfigured documentIntakeSchema administrator documentStorage
+          )
+          for attempt in $(seq 1 60); do
+            nonce="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${attempt}"
+            home_status=$(curl -sS -L --max-time 25 -o /tmp/home.html -w '%{http_code}' "https://www.sercoprev.cl/?_verify=$nonce" || true)
+            login_status=$(curl -sS -L --max-time 25 -o /tmp/login.html -w '%{http_code}' "https://www.sercoprev.cl/login?_verify=$nonce" || true)
+            verify_status=$(curl -sS --max-time 25 -o /tmp/verify.html -w '%{http_code}' "https://www.sercoprev.cl/login/verificar-codigo?_verify=$nonce" || true)
+            cms_status=$(curl -sS --max-time 25 -o /tmp/cms.html -w '%{http_code}' "https://www.sercoprev.cl/admin/configuracion/pagina-comercial?_verify=$nonce" || true)
+            health_status=$(curl -sS --max-time 25 -o /tmp/health.json -w '%{http_code}' "https://www.sercoprev.cl/api/health?_verify=$nonce" || true)
+            version_status=$(curl -sS --max-time 25 -o /tmp/version.json -w '%{http_code}' "https://www.sercoprev.cl/api/version?_verify=$nonce" || true)
+            valid=true
+            [ "$home_status" = '200' ] || valid=false
+            [ "$login_status" = '200' ] || valid=false
+            { [ "$verify_status" = '302' ] || [ "$verify_status" = '307' ] || [ "$verify_status" = '308' ]; } || valid=false
+            { [ "$cms_status" = '302' ] || [ "$cms_status" = '307' ] || [ "$cms_status" = '308' ]; } || valid=false
+            [ "$health_status" = '200' ] || valid=false
+            [ "$version_status" = '200' ] || valid=false
+            grep -qi 'Nuestro equipo' /tmp/home.html || valid=false
+            grep -qi 'René G. Morales' /tmp/home.html || valid=false
+            grep -qi 'Guillermo Paiguano' /tmp/home.html || valid=false
+            grep -qi 'Experiencias de clientes' /tmp/home.html || valid=false
+            grep -qi 'Mostrar' /tmp/login.html || valid=false
+            ! grep -Eq '\$70[.]?000|\$50[.]?000|\$10[.]?000|\$30[.]?000' /tmp/home.html || valid=false
+            jq -e --arg release "$EXPECTED_RELEASE" '.status == "ok" and .release == $release' /tmp/health.json >/dev/null 2>&1 || valid=false
+            jq -e --arg release "$EXPECTED_RELEASE" '.service == "sercoprev-web" and .release == $release and .runtime == "cloudflare-workers"' /tmp/version.json >/dev/null 2>&1 || valid=false
+            for check in "${checks[@]}"; do
+              jq -e --arg check "$check" '.checks[$check] == true' /tmp/health.json >/dev/null 2>&1 || valid=false
+            done
+            if [ "$valid" = true ]; then healthy=true; break; fi
+            sleep 5
+          done
+          echo "GET / => ${home_status:-unknown}"
+          echo "GET /login => ${login_status:-unknown}"
+          echo "GET /login/verificar-codigo => ${verify_status:-unknown}"
+          echo "GET /admin/configuracion/pagina-comercial => ${cms_status:-unknown}"
+          echo "GET /api/health => ${health_status:-unknown}"
+          echo "GET /api/version => ${version_status:-unknown}"
+          cat /tmp/health.json 2>/dev/null || true
+          echo
+          cat /tmp/version.json 2>/dev/null || true
+          echo
+          test "$healthy" = true
