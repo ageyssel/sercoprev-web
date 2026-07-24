@@ -15,7 +15,7 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 40
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: 9021b712f9a73815e6b333a4870e0021
@@ -161,6 +161,8 @@ jobs:
             supabase/migrations/202607230013_immutable_payroll_and_indicator_history.sql
             supabase/migrations/202607230014_closed_record_integrity.sql
             supabase/migrations/202607230015_staff_email_mfa.sql
+            supabase/migrations/202607240016_comprehensive_audit_and_admin_rbac.sql
+            supabase/migrations/202607240017_audit_immutability_fk_fix.sql
           )
           for migration in "${migrations[@]}"; do test -f "$migration"; done
 
@@ -192,9 +194,44 @@ jobs:
               to_regclass('public.datos_oficiales_versiones') is not null
               and to_regclass('public.staff_mfa_challenges') is not null
               and to_regclass('public.staff_mfa_sessions') is not null
+              and to_regclass('public.auditoria_eventos') is not null
+              and exists (
+                select 1 from information_schema.columns
+                where table_schema = 'public' and table_name = 'auditoria_eventos' and column_name = 'transaction_code'
+              )
+              and exists (
+                select 1 from information_schema.columns
+                where table_schema = 'public' and table_name = 'auditoria_eventos' and column_name = 'actor_role'
+              )
+              and exists (
+                select 1 from public.sercoprev_schema_migrations
+                where filename = '202607240016_comprehensive_audit_and_admin_rbac.sql'
+              )
+              and exists (
+                select 1 from public.sercoprev_schema_migrations
+                where filename = '202607240017_audit_immutability_fk_fix.sql'
+              )
+              and to_regprocedure('private.is_privileged_admin()') is not null
               and exists (select 1 from pg_trigger where not tgisinternal and tgname = 'datos_oficiales_capture_version')
               and exists (select 1 from pg_trigger where not tgisinternal and tgname = 'periodos_remuneraciones_protect_state')
               and exists (select 1 from pg_trigger where not tgisinternal and tgname = 'periodos_contables_protect_closed')
+              and exists (select 1 from pg_trigger where not tgisinternal and tgname = 'auditoria_eventos_immutable')
+              and exists (select 1 from pg_trigger where not tgisinternal and tgname = 'audit_change_empresas')
+              and exists (
+                select 1 from pg_policies
+                where schemaname = 'public' and tablename = 'auditoria_eventos' and policyname = 'auditoria_privileged_admin_select'
+              )
+              and not exists (
+                select 1
+                from pg_constraint
+                where conrelid = 'public.auditoria_eventos'::regclass
+                  and contype = 'f'
+                  and conname in (
+                    'auditoria_eventos_actor_user_id_fkey',
+                    'auditoria_eventos_empresa_id_fkey',
+                    'auditoria_eventos_target_user_id_fkey'
+                  )
+              )
             then 1 else 0 end;" | grep -qx '1'
 
       - name: Build Cloudflare Worker
@@ -290,6 +327,7 @@ jobs:
             officialDataFreshness
             closedRecordsProtectionSchema
             userAccessSchema
+            auditTrailSchema
             staffMfaSchema
             staffMfaEmailDeliveryConfigured
             documentIntakeSchema

@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import { AppIcon, type AppIconName } from '@/components/AppIcon'
 
 type Item = { href: string; label: string; icon: AppIconName; exact?: boolean; badge?: string }
-type Group = { label: string; items: Item[] }
+type Group = { label: string; items: Item[]; privilegedOnly?: boolean }
 
 const groups: Group[] = [
   {
@@ -36,18 +36,21 @@ const groups: Group[] = [
   },
   {
     label: 'Configuración',
+    privilegedOnly: true,
     items: [
       { href: '/admin/usuarios', label: 'Usuarios y accesos', icon: 'shield' },
+      { href: '/admin/auditoria', label: 'Auditoría', icon: 'tasks' },
     ],
   },
 ]
 
-export function AdminNav({ mobile = false }: { mobile?: boolean }) {
+export function AdminNav({ mobile = false, canManageSettings = false }: { mobile?: boolean; canManageSettings?: boolean }) {
   const pathname = usePathname()
+  const visibleGroups = groups.filter((group) => !group.privilegedOnly || canManageSettings)
 
   return (
     <nav aria-label="Navegación de administración" className="space-y-4">
-      {groups.map((group) => (
+      {visibleGroups.map((group) => (
         <div key={group.label}>
           <p className={`mb-1.5 px-3 text-[9px] font-extrabold uppercase tracking-[0.19em] ${mobile ? 'text-slate-400' : 'text-slate-500'}`}>{group.label}</p>
           <div className="space-y-0.5">

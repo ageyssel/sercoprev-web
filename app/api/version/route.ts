@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 
 export const dynamic = 'force-dynamic'
 
-const RELEASE = '2026-07-23-staff-email-mfa-health-2'
+const RELEASE = '2026-07-24-comprehensive-audit-rbac-1'
 
 export async function GET() {
   return NextResponse.json(
