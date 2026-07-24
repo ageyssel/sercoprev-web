@@ -1,0 +1,98 @@
+name: Certify Audit Page Hotfix
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 9021b712f9a73815e6b333a4870e0021
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+      SUPABASE_URL: https://kxrxlygnhukfmdgqhoaz.supabase.co
+      EXPECTED_MAIN: 2fae80375f2f3041b10e73b602b4665ad06ba657
+    steps:
+      - name: Validate credentials
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$SUPABASE_SECRET_KEY"
+
+      - name: Checkout exact main
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ env.EXPECTED_MAIN }}
+
+      - name: Confirm immutable-safe query implementation
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_MAIN"
+          grep -q ".from('auditoria_eventos')" app/admin/auditoria/page.tsx
+          grep -q ".from('empresas').select('id, razon_social, nombre_fantasia').in('id', companyIds)" app/admin/auditoria/page.tsx
+          ! grep -q "empresa:empresas" app/admin/auditoria/page.tsx
+
+      - name: Verify production audit data read path
+        shell: bash
+        run: |
+          set -euo pipefail
+          auth=(-H "apikey: $SUPABASE_SECRET_KEY" -H "Authorization: Bearer $SUPABASE_SECRET_KEY")
+          status=$(curl -sS --max-time 30 "${auth[@]}" -o /tmp/audit.json -w '%{http_code}' "$SUPABASE_URL/rest/v1/auditoria_eventos?select=id,transaction_code,empresa_id,actor_name,module,result,created_at&order=created_at.desc&limit=50")
+          test "$status" = '200'
+          jq -e 'type == "array" and length > 0 and all(.[]; (.transaction_code | type == "string") and (.module | type == "string"))' /tmp/audit.json >/dev/null
+          jq -r '[.[].empresa_id | select(. != null)] | unique | .[]' /tmp/audit.json > /tmp/company-ids.txt
+          if [ -s /tmp/company-ids.txt ]; then
+            ids=$(paste -sd, /tmp/company-ids.txt)
+            company_status=$(curl -sS --max-time 30 "${auth[@]}" -o /tmp/companies.json -w '%{http_code}' "$SUPABASE_URL/rest/v1/empresas?select=id,razon_social,nombre_fantasia&id=in.($ids)")
+            test "$company_status" = '200'
+            jq -e 'type == "array"' /tmp/companies.json >/dev/null
+          fi
+          echo "Audit rows verified: $(jq length /tmp/audit.json)"
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install and validate
+        run: |
+          npm ci --no-audit --no-fund --silent
+          npm run lint -- --quiet
+          npm run typecheck -- --pretty false
+          npm run build:cloudflare
+
+      - name: Deploy exact main
+        run: npx wrangler deploy --keep-vars
+
+      - name: Verify bindings and production
+        shell: bash
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/sercoprev-web/settings"
+          curl -sS --max-time 30 -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" "$api" -o /tmp/settings.json
+          jq -e '.success == true and (.result.bindings | any(.name == "AI" and .type == "ai"))' /tmp/settings.json >/dev/null
+          healthy=false
+          for attempt in $(seq 1 40); do
+            nonce="${GITHUB_RUN_ID}-${attempt}-$(date +%s)"
+            hs=$(curl -sS --max-time 20 -o /tmp/health.json -w '%{http_code}' "https://www.sercoprev.cl/api/health?_audit_hotfix=$nonce" || true)
+            vs=$(curl -sS --max-time 20 -o /tmp/version.json -w '%{http_code}' "https://www.sercoprev.cl/api/version?_audit_hotfix=$nonce" || true)
+            as=$(curl -sS --max-time 20 -o /tmp/audit-page.html -w '%{http_code}' "https://www.sercoprev.cl/admin/auditoria?_audit_hotfix=$nonce" || true)
+            if [ "$hs" = '200' ] && [ "$vs" = '200' ] && { [ "$as" = '302' ] || [ "$as" = '307' ] || [ "$as" = '308' ]; } && jq -e '.status == "ok" and .checks.auditTrailSchema == true and .checks.officialDataHistorySchema == true' /tmp/health.json >/dev/null 2>&1; then
+              healthy=true
+              break
+            fi
+            sleep 5
+          done
+          echo "GET /api/health => ${hs:-unknown}"
+          echo "GET /api/version => ${vs:-unknown}"
+          echo "GET /admin/auditoria (sin sesión) => ${as:-unknown}"
+          cat /tmp/health.json
+          echo
+          cat /tmp/version.json
+          test "$healthy" = true
