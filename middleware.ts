@@ -6,8 +6,10 @@ import {
   STAFF_MFA_COOKIE,
   verifySignedStaffMfaToken,
 } from './lib/staff-mfa-token'
+import { isPrivilegedAdminRole } from './utils/supabase/role-access'
 
 const PROTECTED_PREFIXES = ['/admin', '/dashboard', '/cuenta']
+const PRIVILEGED_PREFIXES = ['/admin/usuarios', '/admin/auditoria', '/admin/configuracion']
 const VERIFY_PATH = '/login/verificar-codigo'
 
 function redirectWithSessionCookies(url: URL, source: NextResponse) {
@@ -48,6 +50,7 @@ export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname
   const isProtectedRoute = PROTECTED_PREFIXES.some((prefix) => pathname.startsWith(prefix))
   const isStaffRoute = pathname.startsWith('/admin')
+  const isPrivilegedRoute = PRIVILEGED_PREFIXES.some((prefix) => pathname.startsWith(prefix))
   const isVerificationRoute = pathname === VERIFY_PATH
 
   if ((isProtectedRoute || isVerificationRoute) && !user) {
@@ -94,6 +97,24 @@ export async function middleware(request: NextRequest) {
           : 'La autorización de seguridad venció. Ingrese nuevamente',
       )
       return redirectWithSessionCookies(verifyUrl, response)
+    }
+
+    if (isStaffRoute && isPrivilegedRoute && trusted) {
+      const [{ data: directAdmin }, { data: staffProfile }] = await Promise.all([
+        supabase.from('empresas').select('es_admin').eq('user_id', user.id).maybeSingle(),
+        supabase.from('usuarios_organizacion').select('rol, activo').eq('user_id', user.id).maybeSingle(),
+      ])
+
+      const privileged = Boolean(directAdmin?.es_admin)
+        || Boolean(staffProfile?.activo && isPrivilegedAdminRole(staffProfile.rol))
+
+      if (!privileged) {
+        const adminUrl = request.nextUrl.clone()
+        adminUrl.pathname = '/admin'
+        adminUrl.search = ''
+        adminUrl.searchParams.set('message', 'Su rol no tiene acceso a configuración, usuarios ni auditoría')
+        return redirectWithSessionCookies(adminUrl, response)
+      }
     }
   }
 
