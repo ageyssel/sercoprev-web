@@ -24,6 +24,8 @@ jobs:
     outputs:
       typecheck_status: ${{ steps.typecheck.outputs.status }}
       typecheck_log: ${{ steps.typecheck.outputs.log }}
+      build_status: ${{ steps.cloudflare-build.outputs.status }}
+      build_log: ${{ steps.cloudflare-build.outputs.log }}
     env:
       NEXT_PUBLIC_SUPABASE_URL: https://kxrxlygnhukfmdgqhoaz.supabase.co
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_LpXB0WEd-O8Y5ARxeEZ2hQ_xhw3jP1n
@@ -59,16 +61,24 @@ jobs:
           exit "$status"
 
       - name: Build Cloudflare Worker
+        id: cloudflare-build
         shell: bash
         run: |
           set +e
           npm run build:cloudflare > /tmp/sercoprev-cloudflare-build.log 2>&1
           status=$?
+          echo "status=$status" >> "$GITHUB_OUTPUT"
           if [ "$status" -ne 0 ]; then
-            echo "Cloudflare build failed with exit code $status"
-            tail -n 160 /tmp/sercoprev-cloudflare-build.log
+            grep -Ei '(^|[[:space:]])(error|failed|failure|cannot|invalid|unsupported|exception)(:|[[:space:]])|✘|ELIFECYCLE|Build failed' /tmp/sercoprev-cloudflare-build.log > /tmp/sercoprev-cloudflare-build-diagnostic.log || true
+            if [ ! -s /tmp/sercoprev-cloudflare-build-diagnostic.log ]; then
+              tail -n 180 /tmp/sercoprev-cloudflare-build.log > /tmp/sercoprev-cloudflare-build-diagnostic.log
+            fi
+            encoded=$(base64 -w 0 /tmp/sercoprev-cloudflare-build-diagnostic.log)
+            echo "log=$encoded" >> "$GITHUB_OUTPUT"
+            cat /tmp/sercoprev-cloudflare-build-diagnostic.log
             exit "$status"
           fi
+          echo "log=" >> "$GITHUB_OUTPUT"
           tail -n 40 /tmp/sercoprev-cloudflare-build.log
 
       - name: Enforce Cloudflare Free bundle limit
@@ -178,4 +188,17 @@ jobs:
         shell: bash
         run: |
           echo "$TYPECHECK_LOG" | base64 -d
+          exit 1
+
+  build-diagnostics:
+    needs: check
+    if: ${{ always() && needs.check.outputs.build_status != '' && needs.check.outputs.build_status != '0' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Print Cloudflare build errors only
+        env:
+          BUILD_LOG: ${{ needs.check.outputs.build_log }}
+        shell: bash
+        run: |
+          echo "$BUILD_LOG" | base64 -d
           exit 1
