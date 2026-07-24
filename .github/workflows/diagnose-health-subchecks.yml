@@ -1,0 +1,79 @@
+name: Diagnose Health Subchecks
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    if: github.head_ref == 'ops/error-3257248274-diagnostic'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+      SUPABASE_URL: https://kxrxlygnhukfmdgqhoaz.supabase.co
+    steps:
+      - name: Query database profiles and Storage safely
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/health-subchecks
+          auth=(-H "apikey: ${SUPABASE_SECRET_KEY}" -H "Authorization: Bearer ${SUPABASE_SECRET_KEY}" -H 'Content-Type: application/json')
+
+          request() {
+            local name="$1" url="$2"
+            local status
+            status=$(curl -sS --max-time 30 -o "/tmp/health-subchecks/${name}.json" -w '%{http_code}' "${auth[@]}" "$url" || true)
+            printf '%s=%s\n' "$name" "$status" | tee -a /tmp/health-subchecks/statuses.txt
+          }
+
+          request migration "$SUPABASE_URL/rest/v1/sercoprev_schema_migrations?select=filename&filename=eq.202607230006_document_intake_queue.sql"
+          request lots "$SUPABASE_URL/rest/v1/lotes_documentales?select=id&limit=1"
+          request files "$SUPABASE_URL/rest/v1/archivos_ingesta?select=id&limit=1"
+          request documents "$SUPABASE_URL/rest/v1/documentos?select=id&limit=1"
+          request staff_roles "$SUPABASE_URL/rest/v1/usuarios_organizacion?select=rol,activo&limit=100"
+          request direct_admin "$SUPABASE_URL/rest/v1/empresas?select=es_admin,user_id&es_admin=eq.true&limit=10"
+          request buckets "$SUPABASE_URL/storage/v1/bucket"
+
+          storage_status=$(curl -sS --max-time 30 -o /tmp/health-subchecks/storage-list.json -w '%{http_code}' \
+            -X POST "${auth[@]}" "$SUPABASE_URL/storage/v1/object/list/documentos" \
+            --data '{"prefix":"","limit":1,"offset":0,"sortBy":{"column":"name","order":"asc"}}' || true)
+          printf 'storage_list=%s\n' "$storage_status" | tee -a /tmp/health-subchecks/statuses.txt
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path('/tmp/health-subchecks')
+          def load(name):
+              try:
+                  return json.loads((root / name).read_text())
+              except Exception:
+                  return None
+
+          result = {
+              'migration_rows': len(load('migration.json') or []),
+              'lots_accessible': isinstance(load('lots.json'), list),
+              'files_accessible': isinstance(load('files.json'), list),
+              'documents_accessible': isinstance(load('documents.json'), list),
+              'staff_roles': sorted({str(row.get('rol')) for row in (load('staff_roles.json') or []) if row.get('activo') is True}),
+              'active_staff_count': sum(1 for row in (load('staff_roles.json') or []) if row.get('activo') is True),
+              'direct_admin_count': sum(1 for row in (load('direct_admin.json') or []) if row.get('es_admin') is True and row.get('user_id')),
+              'bucket_ids': sorted(str(row.get('id')) for row in (load('buckets.json') or []) if row.get('id')),
+              'document_bucket_private': any(row.get('id') == 'documentos' and row.get('public') is False for row in (load('buckets.json') or [])),
+              'storage_list_accessible': isinstance(load('storage-list.json'), list),
+          }
+          (root / 'summary.json').write_text(json.dumps(result, indent=2, ensure_ascii=False))
+          print(json.dumps(result, indent=2, ensure_ascii=False))
+          PY
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: health-subchecks
+          path: /tmp/health-subchecks
+          retention-days: 3
