@@ -1,0 +1,41 @@
+name: Check SERCOPREV Production
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check production health and version
+        shell: bash
+        run: |
+          set -euo pipefail
+          nonce="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          health_status=$(curl -sS --max-time 30 -o /tmp/health.json -w '%{http_code}' "https://www.sercoprev.cl/api/health?_verify=$nonce" || true)
+          version_status=$(curl -sS --max-time 30 -o /tmp/version.json -w '%{http_code}' "https://www.sercoprev.cl/api/version?_verify=$nonce" || true)
+          echo "HEALTH_HTTP=$health_status"
+          cat /tmp/health.json || true
+          echo
+          echo "VERSION_HTTP=$version_status"
+          cat /tmp/version.json || true
+          echo
+          test "$health_status" = '200'
+          test "$version_status" = '200'
+          jq -e '.status == "ok" and .checks.officialDataHistorySchema == true' /tmp/health.json >/dev/null
+          health_release=$(jq -r '.release // empty' /tmp/health.json)
+          version_release=$(jq -r '.release // empty' /tmp/version.json)
+          test -n "$health_release"
+          test "$health_release" = "$version_release"
+          case "$health_release" in
+            2026-07-23-immutable-payroll-indicators-1|2026-07-23-closed-record-integrity-1|2026-07-23-staff-email-mfa-health-2|2026-07-24-comprehensive-audit-rbac-1|2026-07-24-commercial-site-cms-1) ;;
+            *) echo "Unexpected release: $health_release"; exit 1 ;;
+          esac
+          failing=$(jq -r '[.checks | to_entries[] | select(.value != true) | .key] | join(",")' /tmp/health.json)
+          test -z "$failing"
