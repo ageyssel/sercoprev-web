@@ -1,0 +1,348 @@
+name: Deploy Audit RBAC Production
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare-production
+  cancel-in-progress: true
+
+jobs:
+  deploy-and-certify:
+    if: github.head_ref == 'ops/deploy-audit-rbac-production'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 9021b712f9a73815e6b333a4870e0021
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+      SUPABASE_DB_URL_SECRET: ${{ secrets.SUPABASE_DB_URL }}
+      SUPABASE_DATABASE_URL_SECRET: ${{ secrets.SUPABASE_DATABASE_URL }}
+      DATABASE_URL_SECRET: ${{ secrets.DATABASE_URL }}
+      POSTGRES_URL_SECRET: ${{ secrets.POSTGRES_URL }}
+      SUPABASE_DB_PASSWORD_SECRET: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      SUPABASE_DATABASE_PASSWORD_SECRET: ${{ secrets.SUPABASE_DATABASE_PASSWORD }}
+      POSTGRES_PASSWORD_SECRET: ${{ secrets.POSTGRES_PASSWORD }}
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      WHATSAPP_ACCESS_TOKEN: ${{ secrets.WHATSAPP_ACCESS_TOKEN }}
+      WHATSAPP_PHONE_NUMBER_ID: ${{ secrets.WHATSAPP_PHONE_NUMBER_ID }}
+
+    steps:
+      - name: Validate credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          test -n "${SUPABASE_SECRET_KEY:-}"
+          test -n "${RESEND_API_KEY:-}"
+          test -n "${SUPABASE_DB_URL_SECRET:-}${SUPABASE_DATABASE_URL_SECRET:-}${DATABASE_URL_SECRET:-}${POSTGRES_URL_SECRET:-}${SUPABASE_DB_PASSWORD_SECRET:-}${SUPABASE_DATABASE_PASSWORD_SECRET:-}${POSTGRES_PASSWORD_SECRET:-}"
+
+      - name: Checkout exact latest main
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: main
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund --silent
+
+      - name: Resolve expected release
+        shell: bash
+        run: |
+          set -euo pipefail
+          health_release=$(sed -n "s/^const RELEASE = '\([^']*\)'$/\1/p" app/api/health/route.ts)
+          version_release=$(sed -n "s/^const RELEASE = '\([^']*\)'$/\1/p" app/api/version/route.ts)
+          test -n "$health_release"
+          test "$health_release" = "$version_release"
+          echo "EXPECTED_RELEASE=$health_release" >> "$GITHUB_ENV"
+          test "$health_release" = '2026-07-24-comprehensive-audit-rbac-1'
+
+      - name: Install PostgreSQL client
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends postgresql-client
+          fi
+
+      - name: Resolve Supabase database connection
+        shell: bash
+        run: |
+          set -euo pipefail
+          raw=''
+          for value in "${SUPABASE_DB_URL_SECRET:-}" "${SUPABASE_DATABASE_URL_SECRET:-}" "${DATABASE_URL_SECRET:-}" "${POSTGRES_URL_SECRET:-}"; do
+            if [ -n "$value" ]; then raw="$value"; break; fi
+          done
+          raw=$(RAW="$raw" python - <<'PY'
+          import os
+          value = os.environ.get('RAW', '').strip()
+          if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+              value = value[1:-1].strip()
+          print(value, end='')
+          PY
+          )
+
+          password=''
+          for value in "${SUPABASE_DB_PASSWORD_SECRET:-}" "${SUPABASE_DATABASE_PASSWORD_SECRET:-}" "${POSTGRES_PASSWORD_SECRET:-}"; do
+            if [ -n "$value" ]; then password="$value"; break; fi
+          done
+
+          if [[ "$raw" == postgresql://* || "$raw" == postgres://* ]]; then
+            echo "::add-mask::$raw"
+            if psql "$raw" -v ON_ERROR_STOP=1 -Atqc 'select 1' >/dev/null 2>&1; then
+              echo "SUPABASE_DB_URL=$raw" >> "$GITHUB_ENV"
+              exit 0
+            fi
+            extracted=$(RAW="$raw" python - <<'PY'
+          import os
+          from urllib.parse import unquote, urlparse
+          value = unquote(urlparse(os.environ['RAW']).password or '')
+          print('' if value.upper() in {'YOUR-PASSWORD', '[YOUR-PASSWORD]', 'PASSWORD', '[PASSWORD]'} else value, end='')
+          PY
+            )
+            [ -z "$password" ] && password="$extracted"
+          elif [ -n "$raw" ] && [ -z "$password" ]; then
+            password="$raw"
+          fi
+
+          test -n "$password"
+          echo "::add-mask::$password"
+          encoded=$(PASSWORD="$password" python - <<'PY'
+          import os
+          from urllib.parse import quote
+          print(quote(os.environ['PASSWORD'], safe=''), end='')
+          PY
+          )
+
+          project_ref='kxrxlygnhukfmdgqhoaz'
+          regions=(sa-east-1 us-east-1 us-east-2 us-west-1 us-west-2 ca-central-1 eu-west-1 eu-west-2 eu-central-1 ap-south-1 ap-southeast-1 ap-southeast-2 ap-northeast-1 ap-northeast-2)
+          for region in "${regions[@]}"; do
+            for cluster in 0 1 2; do
+              for port in 5432 6543; do
+                candidate="postgresql://postgres.${project_ref}:${encoded}@aws-${cluster}-${region}.pooler.supabase.com:${port}/postgres?sslmode=require&connect_timeout=6"
+                echo "::add-mask::$candidate"
+                if psql "$candidate" -v ON_ERROR_STOP=1 -Atqc 'select 1' >/dev/null 2>&1; then
+                  echo "SUPABASE_DB_URL=$candidate" >> "$GITHUB_ENV"
+                  exit 0
+                fi
+              done
+            done
+          done
+          exit 1
+
+      - name: Apply audit migrations
+        shell: bash
+        run: |
+          set -euo pipefail
+          migrations=(
+            supabase/migrations/202607240016_comprehensive_audit_and_admin_rbac.sql
+            supabase/migrations/202607240017_audit_immutability_fk_fix.sql
+          )
+
+          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          create table if not exists public.sercoprev_schema_migrations (
+            filename text primary key,
+            checksum text not null,
+            applied_at timestamptz not null default now()
+          );
+          revoke all on table public.sercoprev_schema_migrations from anon, authenticated;
+          SQL
+
+          for migration in "${migrations[@]}"; do
+            test -f "$migration"
+            filename=$(basename "$migration")
+            checksum=$(sha256sum "$migration" | awk '{print $1}')
+            recorded=$(psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -Atqc "select checksum from public.sercoprev_schema_migrations where filename = '$filename'")
+            if [ -n "$recorded" ]; then
+              test "$recorded" = "$checksum"
+              continue
+            fi
+            psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f "$migration"
+            psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -c "insert into public.sercoprev_schema_migrations(filename, checksum) values ('$filename', '$checksum')"
+          done
+
+      - name: Verify audit schema and transactional behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          do $$
+          declare
+            v_actor uuid;
+            v_company uuid;
+            v_audit_id bigint;
+            v_audit_actor uuid;
+            v_transaction text;
+            mutation_blocked boolean := false;
+          begin
+            select coalesce(
+              (select user_id from public.usuarios_organizacion where activo = true and rol in ('Superadministrador', 'Administrador') limit 1),
+              (select user_id from public.empresas where es_admin = true limit 1)
+            ) into v_actor;
+            select id into v_company from public.empresas order by created_at limit 1;
+
+            if v_actor is null or v_company is null then
+              raise exception 'AUDIT_TEST_FIXTURE_MISSING';
+            end if;
+
+            perform set_config(
+              'request.headers',
+              jsonb_build_object(
+                'x-sercoprev-actor-user-id', v_actor::text,
+                'x-sercoprev-request-id', 'audit-certification-' || replace(gen_random_uuid()::text, '-', ''),
+                'user-agent', 'SERCOPREV production certification'
+              )::text,
+              true
+            );
+
+            update public.empresas
+            set ultima_actividad_at = ultima_actividad_at
+            where id = v_company;
+
+            select id, actor_user_id, transaction_code
+              into v_audit_id, v_audit_actor, v_transaction
+            from public.auditoria_eventos
+            where entidad = 'empresas'
+              and entidad_id = v_company::text
+              and source = 'database_trigger'
+            order by id desc
+            limit 1;
+
+            if v_audit_id is null or v_audit_actor is distinct from v_actor or v_transaction !~ '^TX-' then
+              raise exception 'AUDIT_ACTOR_OR_TRANSACTION_INVALID';
+            end if;
+
+            begin
+              update public.auditoria_eventos set description = 'mutación prohibida' where id = v_audit_id;
+            exception when others then
+              mutation_blocked := position('AUDIT_LOG_IS_IMMUTABLE' in sqlerrm) > 0;
+            end;
+
+            if not mutation_blocked then
+              raise exception 'AUDIT_MUTATION_WAS_NOT_BLOCKED';
+            end if;
+
+            raise exception using errcode = 'P0002', message = 'AUDIT_CERTIFICATION_ROLLBACK';
+          exception
+            when sqlstate 'P0002' then
+              if sqlerrm <> 'AUDIT_CERTIFICATION_ROLLBACK' then raise; end if;
+          end;
+          $$;
+          SQL
+
+          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -Atqc "
+            select case when
+              exists (select 1 from public.sercoprev_schema_migrations where filename = '202607240016_comprehensive_audit_and_admin_rbac.sql')
+              and exists (select 1 from public.sercoprev_schema_migrations where filename = '202607240017_audit_immutability_fk_fix.sql')
+              and to_regprocedure('private.is_privileged_admin()') is not null
+              and to_regprocedure('private.current_audit_actor_id()') is not null
+              and exists (select 1 from pg_trigger where not tgisinternal and tgname = 'auditoria_eventos_immutable')
+              and exists (select 1 from pg_trigger where not tgisinternal and tgname = 'audit_change_empresas')
+              and exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'auditoria_eventos' and policyname = 'auditoria_privileged_admin_select')
+              and not exists (
+                select 1 from pg_constraint
+                where conrelid = 'public.auditoria_eventos'::regclass
+                  and contype = 'f'
+                  and conname in ('auditoria_eventos_actor_user_id_fkey', 'auditoria_eventos_empresa_id_fkey', 'auditoria_eventos_target_user_id_fkey')
+              )
+            then 1 else 0 end;" | grep -qx '1'
+
+      - name: Build Cloudflare Worker
+        run: npm run build:cloudflare
+
+      - name: Prepare atomic secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, secrets
+          from pathlib import Path
+          values = {
+              'SUPABASE_SECRET_KEY': os.environ['SUPABASE_SECRET_KEY'],
+              'RESEND_API_KEY': os.environ['RESEND_API_KEY'],
+              'OFFICIAL_SYNC_TOKEN': secrets.token_urlsafe(48),
+          }
+          for name in ('WHATSAPP_ACCESS_TOKEN', 'WHATSAPP_PHONE_NUMBER_ID'):
+              value = os.environ.get(name, '').strip()
+              if value:
+                  values[name] = value
+          path = Path('/tmp/sercoprev-audit-secrets.json')
+          path.write_text(json.dumps(values))
+          path.chmod(0o600)
+          PY
+
+      - name: Deploy exact main
+        shell: bash
+        run: |
+          set -euo pipefail
+          trap 'rm -f /tmp/sercoprev-audit-secrets.json' EXIT
+          npx wrangler deploy --secrets-file /tmp/sercoprev-audit-secrets.json
+
+      - name: Verify active bindings
+        shell: bash
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/sercoprev-web/settings"
+          curl -sS --max-time 30 -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" "$api" -o /tmp/settings.json
+          jq -e '.success == true' /tmp/settings.json >/dev/null
+          for name in NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY APP_BASE_URL RESEND_FROM_EMAIL SUPABASE_SECRET_KEY RESEND_API_KEY OFFICIAL_SYNC_TOKEN ASSETS WORKER_SELF_REFERENCE; do
+            jq -e --arg name "$name" '.result.bindings | any(.name == $name)' /tmp/settings.json >/dev/null
+          done
+
+      - name: Certify production
+        shell: bash
+        run: |
+          set -euo pipefail
+          healthy=false
+          checks=(
+            publicSupabaseConfig applicationBaseUrl database operationalSchema
+            payrollSchema accountingSchema officialIndicatorsSchema officialDataSchema
+            officialDataHistorySchema officialDataFreshness closedRecordsProtectionSchema
+            userAccessSchema auditTrailSchema staffMfaSchema
+            staffMfaEmailDeliveryConfigured documentIntakeSchema administrator documentStorage
+          )
+
+          for attempt in $(seq 1 60); do
+            nonce="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${attempt}"
+            home_status=$(curl -sS -L --max-time 20 -o /tmp/home.html -w '%{http_code}' "https://www.sercoprev.cl/?_verify=$nonce" || true)
+            login_status=$(curl -sS -L --max-time 20 -o /tmp/login.html -w '%{http_code}' "https://www.sercoprev.cl/login?_verify=$nonce" || true)
+            audit_status=$(curl -sS --max-time 20 -o /tmp/audit.html -w '%{http_code}' "https://www.sercoprev.cl/admin/auditoria?_verify=$nonce" || true)
+            mfa_status=$(curl -sS --max-time 20 -o /tmp/mfa.html -w '%{http_code}' "https://www.sercoprev.cl/login/verificar-codigo?_verify=$nonce" || true)
+            health_status=$(curl -sS --max-time 20 -o /tmp/health.json -w '%{http_code}' "https://www.sercoprev.cl/api/health?_verify=$nonce" || true)
+            version_status=$(curl -sS --max-time 20 -o /tmp/version.json -w '%{http_code}' "https://www.sercoprev.cl/api/version?_verify=$nonce" || true)
+
+            valid=true
+            [ "$home_status" = '200' ] || valid=false
+            [ "$login_status" = '200' ] || valid=false
+            { [ "$audit_status" = '302' ] || [ "$audit_status" = '307' ] || [ "$audit_status" = '308' ]; } || valid=false
+            { [ "$mfa_status" = '302' ] || [ "$mfa_status" = '307' ] || [ "$mfa_status" = '308' ]; } || valid=false
+            [ "$health_status" = '200' ] || valid=false
+            [ "$version_status" = '200' ] || valid=false
+            jq -e --arg release "$EXPECTED_RELEASE" '.status == "ok" and .release == $release' /tmp/health.json >/dev/null 2>&1 || valid=false
+            jq -e --arg release "$EXPECTED_RELEASE" '.release == $release and .runtime == "cloudflare-workers"' /tmp/version.json >/dev/null 2>&1 || valid=false
+            for check in "${checks[@]}"; do
+              jq -e --arg check "$check" '.checks[$check] == true' /tmp/health.json >/dev/null 2>&1 || valid=false
+            done
+
+            if [ "$valid" = true ]; then
+              healthy=true
+              break
+            fi
+            sleep 5
+          done
+
+          echo "home=${home_status:-unknown} login=${login_status:-unknown} audit=${audit_status:-unknown} mfa=${mfa_status:-unknown} health=${health_status:-unknown} version=${version_status:-unknown}"
+          cat /tmp/health.json 2>/dev/null || true
+          echo
+          cat /tmp/version.json 2>/dev/null || true
+          test "$healthy" = true
