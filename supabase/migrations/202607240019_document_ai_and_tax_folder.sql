@@ -18,7 +18,7 @@ alter table public.documentos add constraint documentos_tipo_documento_codigo_ch
 
 update public.documentos
 set tipo_documento_codigo = case
-  when lower(unaccent(coalesce(nombre_original, '') || ' ' || coalesce(descripcion, ''))) like '%carpeta tributaria%' then 'CARPETA_TRIBUTARIA'
+  when lower(coalesce(nombre_original, '') || ' ' || coalesce(descripcion, '')) like '%carpeta tributaria%' then 'CARPETA_TRIBUTARIA'
   when categoria = 'Impuestos' then 'OTRO_TRIBUTARIO'
   when categoria = 'Tributario' then 'OTRO_TRIBUTARIO'
   when categoria = 'Remuneraciones' then 'LIBRO_REMUNERACIONES'
