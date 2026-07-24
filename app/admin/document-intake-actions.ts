@@ -37,8 +37,12 @@ async function sha256(buffer: ArrayBuffer) {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
+function documentAiToken() {
+  return process.env.DOCUMENT_AI_TOKEN?.trim() || process.env.OFFICIAL_SYNC_TOKEN?.trim() || ''
+}
+
 async function requestAiAnalysis(intakeId: string) {
-  const token = process.env.DOCUMENT_AI_TOKEN?.trim()
+  const token = documentAiToken()
   if (!token) return { configured: false, accepted: false }
   const baseUrl = process.env.APP_BASE_URL?.trim() || 'https://www.sercoprev.cl'
   try {
@@ -122,7 +126,7 @@ export async function cargarLoteDocumental(_state: IntakeActionState, formData: 
         if (uploadError) throw uploadError
         uploaded = true
 
-        const tokenConfigured = Boolean(process.env.DOCUMENT_AI_TOKEN?.trim())
+        const tokenConfigured = Boolean(documentAiToken())
         const { data: intake, error: intakeError } = await adminClient.from('archivos_ingesta').insert({
           lote_id: batch.id,
           empresa_id: filenameClassification.companyId,
