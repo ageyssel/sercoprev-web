@@ -6,7 +6,7 @@ import { BrandLogo } from '@/components/BrandLogo'
 import { AppIcon } from '@/components/AppIcon'
 import { signOut } from '@/app/dashboard/actions'
 
-export function AdminShell({ children, adminName }: { children: ReactNode; adminName: string }) {
+export function AdminShell({ children, adminName, canManageSettings }: { children: ReactNode; adminName: string; canManageSettings: boolean }) {
   return (
     <div className="admin-shell min-h-screen">
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-[256px] flex-col overflow-hidden border-r border-white/[0.055] bg-[linear-gradient(180deg,#10283d_0%,#0a1d2e_100%)] px-3.5 py-4.5 shadow-2xl shadow-[#0f2438]/10 lg:flex">
@@ -28,7 +28,7 @@ export function AdminShell({ children, adminName }: { children: ReactNode; admin
 
         <div className="admin-scrollbar -mr-1.5 mt-4 flex-1 overflow-y-auto pr-1.5">
           <div className="mb-4"><OfficialIndicatorSidebar /></div>
-          <AdminNav />
+          <AdminNav canManageSettings={canManageSettings} />
         </div>
 
         <div className="mt-3 space-y-1 border-t border-white/[0.08] pt-3">
@@ -60,7 +60,7 @@ export function AdminShell({ children, adminName }: { children: ReactNode; admin
                   <div className="min-w-0"><p className="text-[9px] font-black uppercase tracking-[0.16em] text-slate-500">Sesión</p><p className="mt-0.5 truncate text-[11px] font-bold text-[#10283d]">{adminName}</p></div>
                 </div>
                 <div className="mb-3"><OfficialIndicatorSidebar mobile /></div>
-                <AdminNav mobile />
+                <AdminNav mobile canManageSettings={canManageSettings} />
                 <form action={signOut} className="mt-3 border-t border-slate-100 pt-2">
                   <button type="submit" className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-bold text-red-700 hover:bg-red-50">
                     <AppIcon name="x" className="h-4 w-4" /> Cerrar sesión
