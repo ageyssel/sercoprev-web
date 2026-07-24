@@ -21,45 +21,49 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p /tmp/error-diagnostic
-          now=$(date +%s000)
-          from=$((now - 6*60*60*1000))
+          export QUERY_NOW=$(date +%s000)
+          export QUERY_FROM=$((QUERY_NOW - 6*60*60*1000))
           endpoint="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/observability/telemetry/query"
 
-          cat > /tmp/error-diagnostic/errors-query.json <<JSON
-          {
-            "queryId": "sercoprev-errors-3257248274",
-            "timeframe": {"from": ${from}, "to": ${now}},
-            "view": "events",
-            "limit": 500,
-            "parameters": {
-              "datasets": [],
-              "filterCombination": "and",
-              "filters": [
-                {"key": "$metadata.service", "operation": "eq", "type": "string", "value": "sercoprev-web"},
-                {"key": "$metadata.error", "operation": "exists", "type": "string"}
-              ],
-              "limit": 500
-            }
-          }
-          JSON
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
 
-          cat > /tmp/error-diagnostic/digest-query.json <<JSON
-          {
-            "queryId": "sercoprev-digest-3257248274",
-            "timeframe": {"from": ${from}, "to": ${now}},
-            "view": "events",
-            "limit": 500,
-            "parameters": {
-              "datasets": [],
-              "filterCombination": "and",
-              "filters": [
-                {"key": "$metadata.service", "operation": "eq", "type": "string", "value": "sercoprev-web"}
-              ],
-              "needle": {"value": "3257248274", "isRegex": false, "matchCase": true},
-              "limit": 500
-            }
+          base = {
+              "timeframe": {"from": int(os.environ["QUERY_FROM"]), "to": int(os.environ["QUERY_NOW"])},
+              "view": "events",
+              "limit": 500,
           }
-          JSON
+          errors = {
+              **base,
+              "queryId": "sercoprev-errors-3257248274",
+              "parameters": {
+                  "datasets": [],
+                  "filterCombination": "and",
+                  "filters": [
+                      {"key": "$metadata.service", "operation": "eq", "type": "string", "value": "sercoprev-web"},
+                      {"key": "$metadata.error", "operation": "exists", "type": "string"},
+                  ],
+                  "limit": 500,
+              },
+          }
+          digest = {
+              **base,
+              "queryId": "sercoprev-digest-3257248274",
+              "parameters": {
+                  "datasets": [],
+                  "filterCombination": "and",
+                  "filters": [
+                      {"key": "$metadata.service", "operation": "eq", "type": "string", "value": "sercoprev-web"},
+                  ],
+                  "needle": {"value": "3257248274", "isRegex": False, "matchCase": True},
+                  "limit": 500,
+              },
+          }
+          out = Path('/tmp/error-diagnostic')
+          (out / 'errors-query.json').write_text(json.dumps(errors))
+          (out / 'digest-query.json').write_text(json.dumps(digest))
+          PY
 
           for query in errors digest; do
             status=$(curl -sS --max-time 60 -o "/tmp/error-diagnostic/${query}-response.json" -w '%{http_code}' \
@@ -86,6 +90,7 @@ jobs:
           echo
 
       - name: Upload diagnostic evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: server-error-3257248274
