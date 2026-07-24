@@ -17,7 +17,7 @@ export async function requireAdmin(allowedRoles?: StaffRole[]) {
     actorUserId: context.user.id,
     actorName: context.displayName,
     actorRole: context.role,
-    adminClient: createAdminClient(),
+    adminClient: createAdminClient({ actorUserId: context.user.id }),
     sessionClient,
   }
 }
