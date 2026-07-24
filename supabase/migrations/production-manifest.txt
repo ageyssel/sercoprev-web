@@ -13,3 +13,4 @@ supabase/migrations/202607230015_staff_email_mfa.sql
 supabase/migrations/202607240016_comprehensive_audit_and_admin_rbac.sql
 supabase/migrations/202607240017_audit_immutability_fk_fix.sql
 supabase/migrations/202607240018_commercial_site_cms.sql
+supabase/migrations/202607240019_document_ai_and_tax_folder.sql
