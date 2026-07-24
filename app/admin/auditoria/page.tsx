@@ -7,6 +7,7 @@ export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
 type AuditCompany = {
+  id: string
   razon_social: string
   nombre_fantasia: string | null
 }
@@ -36,8 +37,10 @@ type AuditRow = {
   before_data: Record<string, unknown> | null
   after_data: Record<string, unknown> | null
   created_at: string
-  empresa: AuditCompany | AuditCompany[] | null
+  empresa: AuditCompany | null
 }
+
+type AuditDatabaseRow = Omit<AuditRow, 'empresa'>
 
 type SearchParams = {
   q?: string
@@ -61,10 +64,6 @@ const timeFormatter = new Intl.DateTimeFormat('es-CL', {
   second: '2-digit',
   hour12: false,
 })
-
-function one<T>(value: T | T[] | null) {
-  return Array.isArray(value) ? value[0] : value
-}
 
 function safeText(value: unknown) {
   return typeof value === 'string' ? value.trim().toLowerCase() : ''
@@ -91,7 +90,7 @@ export default async function AuditPage({ searchParams }: { searchParams?: Promi
   const admin = createAdminClient()
   let query = admin
     .from('auditoria_eventos')
-    .select('id, transaction_code, actor_user_id, actor_name, actor_email, actor_role, target_user_id, target_user_name, target_user_email, empresa_id, accion, entidad, entidad_id, module, description, result, source, request_id, ip_hash, user_agent, metadata, before_data, after_data, created_at, empresa:empresas(razon_social, nombre_fantasia)')
+    .select('id, transaction_code, actor_user_id, actor_name, actor_email, actor_role, target_user_id, target_user_name, target_user_email, empresa_id, accion, entidad, entidad_id, module, description, result, source, request_id, ip_hash, user_agent, metadata, before_data, after_data, created_at')
     .order('created_at', { ascending: false })
     .limit(500)
 
@@ -101,9 +100,23 @@ export default async function AuditPage({ searchParams }: { searchParams?: Promi
   if (/^\d{4}-\d{2}-\d{2}$/.test(hasta)) query = query.lte('created_at', `${hasta}T23:59:59.999-04:00`)
 
   const { data, error } = await query
-  const rows = ((data ?? []) as unknown as AuditRow[]).filter((row) => {
+  if (error) console.error('AUDIT_EVENTS_QUERY_FAILED', error)
+
+  const auditRows = (data ?? []) as unknown as AuditDatabaseRow[]
+  const companyIds = Array.from(new Set(auditRows.map((row) => row.empresa_id).filter((id): id is string => Boolean(id))))
+  const companiesResult = companyIds.length > 0
+    ? await admin.from('empresas').select('id, razon_social, nombre_fantasia').in('id', companyIds)
+    : { data: [] as AuditCompany[], error: null }
+
+  if (companiesResult.error) console.error('AUDIT_COMPANY_LOOKUP_FAILED', companiesResult.error)
+  const companies = new Map(((companiesResult.data ?? []) as AuditCompany[]).map((company) => [company.id, company]))
+  const hydratedRows: AuditRow[] = auditRows.map((row) => ({
+    ...row,
+    empresa: row.empresa_id ? companies.get(row.empresa_id) ?? null : null,
+  }))
+
+  const rows = hydratedRows.filter((row) => {
     if (!q) return true
-    const company = one(row.empresa)
     const haystack = [
       row.transaction_code,
       row.actor_name,
@@ -118,13 +131,14 @@ export default async function AuditPage({ searchParams }: { searchParams?: Promi
       row.description,
       row.result,
       row.source,
-      company?.nombre_fantasia,
-      company?.razon_social,
+      row.empresa?.nombre_fantasia,
+      row.empresa?.razon_social,
+      row.empresa_id,
     ].filter(Boolean).join(' ').toLowerCase()
     return haystack.includes(q)
   })
 
-  const modules = Array.from(new Set(((data ?? []) as unknown as AuditRow[]).map((row) => row.module).filter(Boolean))).sort()
+  const modules = Array.from(new Set(hydratedRows.map((row) => row.module).filter(Boolean))).sort()
   const successful = rows.filter((row) => row.result === 'exitoso').length
   const alerts = rows.filter((row) => row.result !== 'exitoso').length
   const actors = new Set(rows.map((row) => row.actor_user_id || row.actor_email || row.actor_name).filter(Boolean)).size
@@ -139,7 +153,13 @@ export default async function AuditPage({ searchParams }: { searchParams?: Promi
 
       {error && (
         <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700">
-          No fue posible cargar la auditoría. Confirme que la migración de trazabilidad esté aplicada.
+          No fue posible consultar los eventos de auditoría. Intente nuevamente y revise el registro técnico del servidor.
+        </div>
+      )}
+
+      {!error && companiesResult.error && (
+        <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-800">
+          Los eventos se cargaron, pero algunos nombres históricos de empresas no pudieron resolverse. Los identificadores originales permanecen disponibles.
         </div>
       )}
 
@@ -208,7 +228,6 @@ export default async function AuditPage({ searchParams }: { searchParams?: Promi
 
 function AuditEvent({ row }: { row: AuditRow }) {
   const created = new Date(row.created_at)
-  const company = one(row.empresa)
   const metadata = jsonText(row.metadata)
   const before = jsonText(row.before_data)
   const after = jsonText(row.after_data)
@@ -231,7 +250,7 @@ function AuditEvent({ row }: { row: AuditRow }) {
           </div>
           <h3 className="mt-3 text-base font-black text-[#0f2438]">{row.description || displayAction(row.accion)}</h3>
           <p className="mt-1 text-sm font-semibold text-slate-600">{displayAction(row.accion)} sobre <span className="font-mono text-xs text-slate-700">{row.entidad}</span>{row.entidad_id ? ` · ${row.entidad_id}` : ''}</p>
-          {company && <p className="mt-2 text-xs font-bold text-slate-500">Empresa: {company.nombre_fantasia || company.razon_social}</p>}
+          {row.empresa_id && <p className="mt-2 text-xs font-bold text-slate-500">Empresa: {row.empresa?.nombre_fantasia || row.empresa?.razon_social || `Registro histórico ${row.empresa_id}`}</p>}
 
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <Info label="Realizado por" value={row.actor_name || 'Proceso del sistema'} secondary={[row.actor_email, row.actor_role].filter(Boolean).join(' · ')} />
