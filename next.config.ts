@@ -10,7 +10,7 @@ const contentSecurityPolicy = [
   "script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com",
   "style-src 'self' 'unsafe-inline'",
   "font-src 'self' data:",
-  "img-src 'self' data: blob:",
+  "img-src 'self' data: blob: https://kxrxlygnhukfmdgqhoaz.supabase.co",
   "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://cloudflareinsights.com https://api.resend.com",
   "worker-src 'self' blob:",
   'upgrade-insecure-requests',
