@@ -16,6 +16,9 @@ WHATSAPP_API_BASE_URL = "https://graph.facebook.com/v23.0"
 WHATSAPP_TEMPLATE_LANGUAGE = "es_CL"
 WHATSAPP_DOCUMENT_REQUEST_TEMPLATE = "sercoprev_solicitud_documental"
 
+[ai]
+binding = "AI"
+
 [assets]
 directory = ".open-next/assets"
 binding = "ASSETS"
