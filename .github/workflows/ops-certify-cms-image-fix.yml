@@ -1,0 +1,112 @@
+name: Certify CMS Image Fix
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cms-image-fix-certification
+  cancel-in-progress: true
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+      SUPABASE_URL: https://kxrxlygnhukfmdgqhoaz.supabase.co
+      TARGET_TEAM_ID: df018b32-a946-478b-a633-d2e5491e810b
+
+    steps:
+      - name: Checkout exact main
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: main
+
+      - name: Confirm exact source fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = '349d14971a7021bda7ada94f69b5e3ac813454fa'
+          grep -Fq "img-src 'self' data: blob: https://kxrxlygnhukfmdgqhoaz.supabase.co" next.config.ts
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('app/admin/configuracion/pagina-comercial/actions.ts').read_text()
+          for name in ('crearIntegranteEquipo', 'actualizarIntegranteEquipo', 'crearResenaComercial', 'actualizarResenaComercial'):
+              start = text.index(f'export async function {name}')
+              end = text.find('\nexport async function ', start + 1)
+              block = text[start:] if end == -1 else text[start:end]
+              if block.rfind("returnToAdmin('") <= block.rfind('catch'):
+                  raise SystemExit(f'{name}: success redirect remains inside catch')
+          PY
+
+      - name: Resolve current valid team photo
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -sS --max-time 30 \
+            -H "apikey: ${SUPABASE_SECRET_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_SECRET_KEY}" \
+            "${SUPABASE_URL}/rest/v1/pagina_comercial_equipo?id=eq.${TARGET_TEAM_ID}&select=id,nombre,foto_path" \
+            -o /tmp/team.json
+          jq -e 'length == 1 and .[0].foto_path != null and (.[0].foto_path | length > 0)' /tmp/team.json >/dev/null
+          photo_path=$(jq -r '.[0].foto_path' /tmp/team.json)
+          echo "PHOTO_PATH=$photo_path" >> "$GITHUB_ENV"
+          photo_url="${SUPABASE_URL}/storage/v1/object/public/pagina-comercial/${photo_path}"
+          photo_status=$(curl -sS -L --max-time 30 -o /tmp/photo.bin -D /tmp/photo.headers -w '%{http_code}' "$photo_url")
+          test "$photo_status" = '200'
+          grep -Eqi '^content-type: image/(png|jpeg|webp)' /tmp/photo.headers
+          test -s /tmp/photo.bin
+
+      - name: Wait for and certify production
+        shell: bash
+        run: |
+          set -euo pipefail
+          healthy=false
+          photo_name=$(basename "$PHOTO_PATH")
+          photo_url="${SUPABASE_URL}/storage/v1/object/public/pagina-comercial/${PHOTO_PATH}"
+
+          for attempt in $(seq 1 90); do
+            nonce="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${attempt}"
+            home_status=$(curl -sS -L --max-time 25 -o /tmp/home.html -D /tmp/home.headers -w '%{http_code}' "https://www.sercoprev.cl/?_verify=$nonce" || true)
+            login_status=$(curl -sS -L --max-time 25 -o /tmp/login.html -D /tmp/login.headers -w '%{http_code}' "https://www.sercoprev.cl/login?_verify=$nonce" || true)
+            admin_status=$(curl -sS --max-time 25 -o /tmp/admin.html -D /tmp/admin.headers -w '%{http_code}' "https://www.sercoprev.cl/admin/configuracion/pagina-comercial?_verify=$nonce" || true)
+            health_status=$(curl -sS --max-time 25 -o /tmp/health.json -w '%{http_code}' "https://www.sercoprev.cl/api/health?_verify=$nonce" || true)
+            photo_status=$(curl -sS -L --max-time 25 -o /tmp/prod-photo.bin -D /tmp/prod-photo.headers -w '%{http_code}' "$photo_url" || true)
+
+            valid=true
+            [ "$home_status" = '200' ] || valid=false
+            [ "$login_status" = '200' ] || valid=false
+            { [ "$admin_status" = '302' ] || [ "$admin_status" = '307' ] || [ "$admin_status" = '308' ]; } || valid=false
+            [ "$health_status" = '200' ] || valid=false
+            [ "$photo_status" = '200' ] || valid=false
+            grep -Eqi '^content-security-policy:.*img-src[^;]*https://kxrxlygnhukfmdgqhoaz[.]supabase[.]co' /tmp/home.headers || valid=false
+            grep -Eqi '^content-security-policy:.*img-src[^;]*https://kxrxlygnhukfmdgqhoaz[.]supabase[.]co' /tmp/admin.headers || valid=false
+            grep -Fq "$photo_name" /tmp/home.html || valid=false
+            grep -qi 'Rene G. Morales' /tmp/home.html || valid=false
+            grep -qi 'Guillermo Paiguano' /tmp/home.html || valid=false
+            grep -qi 'Mostrar' /tmp/login.html || valid=false
+            grep -Eqi '^content-type: image/(png|jpeg|webp)' /tmp/prod-photo.headers || valid=false
+            test -s /tmp/prod-photo.bin || valid=false
+            jq -e '.status == "ok"' /tmp/health.json >/dev/null 2>&1 || valid=false
+
+            if [ "$valid" = true ]; then
+              healthy=true
+              break
+            fi
+            sleep 5
+          done
+
+          echo "GET / => ${home_status:-unknown}"
+          echo "GET /login => ${login_status:-unknown}"
+          echo "GET /admin/configuracion/pagina-comercial => ${admin_status:-unknown}"
+          echo "GET /api/health => ${health_status:-unknown}"
+          echo "GET photo => ${photo_status:-unknown}"
+          echo "PHOTO_PATH=${PHOTO_PATH}"
+          grep -i '^content-security-policy:' /tmp/home.headers || true
+          cat /tmp/health.json 2>/dev/null || true
+          test "$healthy" = true
