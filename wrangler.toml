@@ -3,6 +3,19 @@ compatibility_date = "2025-04-01"
 compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
 main = "custom-worker.ts"
 
+# Variables públicas y operativas no sensibles. Se declaran en el Worker para
+# que cada despliegue sea autosuficiente y no dependa de --keep-vars ni del
+# estado previo del panel de Cloudflare.
+[vars]
+NEXT_PUBLIC_SUPABASE_URL = "https://kxrxlygnhukfmdgqhoaz.supabase.co"
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY = "sb_publishable_LpXB0WEd-O8Y5ARxeEZ2hQ_xhw3jP1n"
+APP_BASE_URL = "https://www.sercoprev.cl"
+RESEND_FROM_EMAIL = "SERCOPREV <portal@sercoprev.cl>"
+NOTIFICATION_ADMIN_EMAILS = "contabilidad@sercoprev.cl"
+WHATSAPP_API_BASE_URL = "https://graph.facebook.com/v23.0"
+WHATSAPP_TEMPLATE_LANGUAGE = "es_CL"
+WHATSAPP_DOCUMENT_REQUEST_TEMPLATE = "sercoprev_solicitud_documental"
+
 [assets]
 directory = ".open-next/assets"
 binding = "ASSETS"
