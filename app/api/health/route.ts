@@ -54,22 +54,18 @@ export async function GET() {
     return !error
   })
 
+  // Cada bloque usa consultas representativas. La migración productiva valida
+  // exhaustivamente tablas, columnas y triggers antes de desplegar; el health
+  // comprueba aquí disponibilidad funcional sin superar el límite de
+  // subsolicitudes de Cloudflare Workers.
   const operationalSchema = await safeCheck('OPERATIONAL_SCHEMA', async () => {
     const supabase = createAdminClient()
     return allSucceeded(await Promise.all([
       supabase.from('empresas').select('id, estado_cliente, contador_asignado, plan_servicio').limit(1),
-      supabase.from('leads').select('id').limit(1),
-      supabase.from('obligaciones').select('id').limit(1),
       supabase.from('tareas').select('id, serie_id, periodo_recurrente, es_recurrente').limit(1),
-      supabase.from('tarea_series').select('id, meses_anticipacion, activa').limit(1),
-      supabase.from('solicitudes_documentos').select('id').limit(1),
-      supabase.from('servicios_contratados').select('id').limit(1),
-      supabase.from('auditoria_eventos').select('id').limit(1),
+      supabase.from('solicitudes_documentos').select('id, estado').limit(1),
+      supabase.from('auditoria_eventos').select('id, accion').limit(1),
       supabase.from('notificaciones').select('id, canal, estado').limit(1),
-      supabase.from('honorarios').select('id').limit(1),
-      supabase.from('tickets').select('id').limit(1),
-      supabase.from('ticket_mensajes').select('id').limit(1),
-      supabase.from('contactos_empresa').select('id').limit(1),
     ]))
   })
 
@@ -77,14 +73,9 @@ export async function GET() {
     const supabase = createAdminClient()
     return allSucceeded(await Promise.all([
       supabase.from('trabajadores').select('id, empresa_id, estado').limit(1),
-      supabase.from('contratos_trabajo').select('id, trabajador_id, estado').limit(1),
-      supabase.from('parametros_remuneraciones').select('id, periodo, uf_fecha, utm_periodo, fuente_uf, fuente_utm, indicadores_verificados_at, fuentes_automaticas, parametros_automaticos_at').limit(1),
+      supabase.from('parametros_remuneraciones').select('id, periodo, uf_fecha, utm_periodo, fuentes_automaticas').limit(1),
       supabase.from('periodos_remuneraciones').select('id, periodo, estado, parametros_id').limit(1),
-      supabase.from('conceptos_remuneracion').select('id, codigo').limit(1),
-      supabase.from('novedades_remuneraciones').select('id, periodo_id, trabajador_id').limit(1),
       supabase.from('liquidaciones').select('id, estado').limit(1),
-      supabase.from('vacaciones').select('id, estado').limit(1),
-      supabase.from('licencias_medicas').select('id, estado').limit(1),
       supabase.from('finiquitos').select('id, estado').limit(1),
     ]))
   })
@@ -97,33 +88,29 @@ export async function GET() {
       supabase.from('asientos_contables').select('id, numero, estado').limit(1),
       supabase.from('movimientos_contables').select('id, debe, haber').limit(1),
       supabase.from('documentos_tributarios').select('id, tipo_registro, fingerprint').limit(1),
-      supabase.from('cuentas_bancarias').select('id').limit(1),
-      supabase.from('movimientos_bancarios').select('id, estado, fingerprint').limit(1),
-      supabase.from('conciliaciones_bancarias').select('id').limit(1),
-      supabase.from('importaciones_contables').select('id, tipo, estado').limit(1),
     ]))
   })
 
   const officialIndicatorsSchema = await safeCheck('OFFICIAL_INDICATORS_SCHEMA', async () => {
-    const supabase = createAdminClient()
-    return allSucceeded(await Promise.all([
-      supabase.from('indicadores_oficiales').select('id, tipo, fecha_referencia, valor, fuente_url, obtenido_at').limit(1),
-      supabase.from('parametros_remuneraciones').select('id, uf_fecha, utm_periodo, fuente_uf, fuente_utm, indicadores_verificados_at').limit(1),
-    ]))
+    const { error } = await createAdminClient()
+      .from('indicadores_oficiales')
+      .select('id, tipo, fecha_referencia, valor, fuente_url, obtenido_at')
+      .limit(1)
+    return !error
   })
 
   const officialDataSchema = await safeCheck('OFFICIAL_DATA_SCHEMA', async () => {
-    const supabase = createAdminClient()
-    return allSucceeded(await Promise.all([
-      supabase.from('datos_oficiales').select('id, fuente_codigo, codigo, periodo, valor, unidad, fuente_url, obtenido_at').limit(1),
-      supabase.from('parametros_remuneraciones').select('id, fuentes_automaticas, parametros_automaticos_at').limit(1),
-    ]))
+    const { error } = await createAdminClient()
+      .from('datos_oficiales')
+      .select('id, fuente_codigo, codigo, periodo, valor, unidad, fuente_url, obtenido_at')
+      .limit(1)
+    return !error
   })
 
   const officialDataHistorySchema = await safeCheck('OFFICIAL_DATA_HISTORY_SCHEMA', async () => {
     const supabase = createAdminClient()
     return allSucceeded(await Promise.all([
-      supabase.from('datos_oficiales_versiones').select('id, fuente_codigo, codigo, fecha_referencia, periodo, valor, unidad, fuente_url, obtenido_at').limit(1),
+      supabase.from('datos_oficiales_versiones').select('id, fuente_codigo, codigo, fecha_referencia, periodo, valor').limit(1),
       supabase.from('sercoprev_schema_migrations').select('filename').eq('filename', '202607230013_immutable_payroll_and_indicator_history.sql').limit(1),
     ]))
   })
@@ -206,12 +193,8 @@ export async function GET() {
   })
 
   const documentStorage = await safeCheck('DOCUMENT_STORAGE', async () => {
-    const storage = createAdminClient().storage
-    const buckets = await storage.listBuckets()
-    if (!buckets.error && buckets.data?.some((bucket) => bucket.id === 'documentos' && bucket.public === false)) return true
-
-    const probe = await storage.from('documentos').list('', { limit: 1, offset: 0 })
-    return !probe.error
+    const { data, error } = await createAdminClient().storage.getBucket('documentos')
+    return !error && data?.id === 'documentos' && data.public === false
   })
 
   const checks = {
