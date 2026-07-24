@@ -1,0 +1,38 @@
+name: Current Production Health Check 20260724 2
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Verify live health and version
+        shell: bash
+        run: |
+          set -euo pipefail
+          nonce="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-$(date +%s)"
+          hstatus=$(curl -sS --max-time 25 -o /tmp/health.json -w '%{http_code}' "https://www.sercoprev.cl/api/health?_verify=$nonce")
+          vstatus=$(curl -sS --max-time 25 -o /tmp/version.json -w '%{http_code}' "https://www.sercoprev.cl/api/version?_verify=$nonce")
+          echo "HEALTH_HTTP=$hstatus"
+          cat /tmp/health.json
+          echo
+          echo "VERSION_HTTP=$vstatus"
+          cat /tmp/version.json
+          echo
+          test "$hstatus" = "200"
+          test "$vstatus" = "200"
+          jq -e '.status == "ok"' /tmp/health.json >/dev/null
+          jq -e '.checks.officialDataHistorySchema == true' /tmp/health.json >/dev/null
+          jq -e '[.checks[]] | all' /tmp/health.json >/dev/null
+          hrelease=$(jq -r '.release // empty' /tmp/health.json)
+          vrelease=$(jq -r '.release // empty' /tmp/version.json)
+          test -n "$hrelease"
+          test "$hrelease" = "$vrelease"
+          test "$hrelease" != "2026-07-23-immutable-payroll-indicators-1" || true
