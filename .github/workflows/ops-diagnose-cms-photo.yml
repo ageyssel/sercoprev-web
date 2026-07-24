@@ -1,0 +1,55 @@
+name: Diagnose CMS Photo
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+      SUPABASE_URL: https://kxrxlygnhukfmdgqhoaz.supabase.co
+      TARGET_TEAM_ID: df018b32-a946-478b-a633-d2e5491e810b
+
+    steps:
+      - name: Query team row and storage object
+        shell: bash
+        run: |
+          set -u
+          curl -sS --max-time 30 \
+            -H "apikey: ${SUPABASE_SECRET_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_SECRET_KEY}" \
+            "${SUPABASE_URL}/rest/v1/pagina_comercial_equipo?id=eq.${TARGET_TEAM_ID}&select=id,nombre,foto_path" \
+            -o /tmp/team.json
+          echo 'TEAM_ROW_BEGIN'
+          jq '.' /tmp/team.json
+          echo 'TEAM_ROW_END'
+
+          photo_path=$(jq -r 'if length == 1 then (.[0].foto_path // "") else "" end' /tmp/team.json)
+          echo "Resolved photo path: ${photo_path:-<empty>}"
+
+          if [ -n "$photo_path" ]; then
+            photo_url="${SUPABASE_URL}/storage/v1/object/public/pagina-comercial/${photo_path}"
+            status=$(curl -sS -L --max-time 30 -o /tmp/photo.bin -D /tmp/photo.headers -w '%{http_code}' "$photo_url" || true)
+            echo "Public photo status: $status"
+            grep -Ei '^(content-type|content-length|cache-control):' /tmp/photo.headers || true
+            echo "Downloaded bytes: $(wc -c < /tmp/photo.bin 2>/dev/null || echo 0)"
+          fi
+
+          curl -sS --max-time 30 \
+            -X POST \
+            -H "apikey: ${SUPABASE_SECRET_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_SECRET_KEY}" \
+            -H 'Content-Type: application/json' \
+            "${SUPABASE_URL}/storage/v1/object/list/pagina-comercial" \
+            --data "{\"prefix\":\"equipo/${TARGET_TEAM_ID}\",\"limit\":100,\"offset\":0,\"sortBy\":{\"column\":\"name\",\"order\":\"asc\"}}" \
+            -o /tmp/list.json || true
+          echo 'STORAGE_LIST_BEGIN'
+          jq '[.[] | {name, id, metadata}]' /tmp/list.json 2>/dev/null || cat /tmp/list.json
+          echo 'STORAGE_LIST_END'
