@@ -1,0 +1,57 @@
+name: Build Worker Stack Map
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build-map:
+    if: github.head_ref == 'ops/error-3257248274-diagnostic'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: https://kxrxlygnhukfmdgqhoaz.supabase.co
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_LpXB0WEd-O8Y5ARxeEZ2hQ_xhw3jP1n
+      APP_BASE_URL: https://www.sercoprev.cl
+      SUPABASE_SECRET_KEY: placeholder-for-build-only
+      RESEND_API_KEY: placeholder-for-build-only
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund --silent
+
+      - name: Build Cloudflare Worker
+        run: npm run build:cloudflare
+
+      - name: Collect bundle and source maps
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/worker-stack-map
+          find .open-next .wrangler -type f \( -name '*.js' -o -name '*.map' \) -size +500k -print 2>/dev/null | sort > /tmp/worker-stack-map/files.txt || true
+          while IFS= read -r file; do
+            [ -f "$file" ] || continue
+            safe=$(echo "$file" | sed 's#^./##; s#/#__#g')
+            cp "$file" "/tmp/worker-stack-map/$safe"
+          done < /tmp/worker-stack-map/files.txt
+          grep -Rsn "STAFF_MFA_CHALLENGE_START_FAILED\|LOGIN_CONTEXT_RESOLUTION_FAILED\|Failed to get project config" .open-next 2>/dev/null > /tmp/worker-stack-map/markers.txt || true
+          cat /tmp/worker-stack-map/files.txt
+          cat /tmp/worker-stack-map/markers.txt
+
+      - name: Upload bundle map
+        uses: actions/upload-artifact@v4
+        with:
+          name: worker-stack-map
+          path: /tmp/worker-stack-map
+          retention-days: 3
