@@ -1,8 +1,10 @@
+import Link from 'next/link'
 import { AppIcon } from '@/components/AppIcon'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { createClient } from '@/utils/supabase/server'
 import { cambiarEstadoUsuario, restablecerAccesoUsuario } from '@/app/admin/user-actions'
 import { ClientUserForm, StaffUserForm } from '@/app/admin/components/UserForms'
+import { requirePrivilegedAdminPage } from '@/utils/supabase/require-privileged-admin'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,6 +15,7 @@ type Company = { id: string; razon_social: string; nombre_fantasia: string | nul
 const one = <T,>(value: T | T[] | null) => Array.isArray(value) ? value[0] : value
 
 export default async function UsersPage() {
+  await requirePrivilegedAdminPage()
   const supabase = await createClient()
   const [staffResult, clientUsersResult, companiesResult] = await Promise.all([
     supabase.from('usuarios_organizacion').select('id, nombre, email, rol, activo, must_change_password, created_at').order('nombre'),
@@ -28,7 +31,17 @@ export default async function UsersPage() {
 
   return (
     <div className="mx-auto max-w-[1450px]">
-      <header><p className="text-xs font-black uppercase tracking-[0.18em] text-[#a47b24]">Identidad y permisos</p><h1 className="mt-2 text-3xl font-black tracking-tight text-[#0f2438] sm:text-4xl">Usuarios y accesos</h1><p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">Cuentas del equipo SERCOPREV y accesos adicionales de clientes con roles, cambio obligatorio de contraseña y desactivación inmediata.</p></header>
+      <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.18em] text-[#a47b24]">Identidad y permisos</p>
+          <h1 className="mt-2 text-3xl font-black tracking-tight text-[#0f2438] sm:text-4xl">Usuarios y accesos</h1>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">Cuentas del equipo SERCOPREV y accesos adicionales de clientes con roles, cambio obligatorio de contraseña y desactivación inmediata.</p>
+        </div>
+        <Link href="/admin/auditoria" className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[#10283d] px-4 text-sm font-black text-white shadow-sm transition hover:bg-[#174f7a]">
+          <AppIcon name="tasks" className="h-4 w-4" />
+          Ver auditoría
+        </Link>
+      </header>
       {error && <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700">No fue posible cargar toda la gestión de usuarios. Confirme la migración de accesos.</div>}
 
       <section className="mt-7 grid gap-4 sm:grid-cols-3"><Metric icon="users" label="Equipo activo" value={staff.filter((item) => item.activo).length} /><Metric icon="building" label="Clientes" value={companies.length} /><Metric icon="shield" label="Accesos cliente" value={clientUsers.filter((item) => item.activo).length} /></section>
@@ -38,7 +51,7 @@ export default async function UsersPage() {
         <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7"><SectionTitle icon="building" title="Nuevo usuario de cliente" description="Permita que más personas de una empresa ingresen a su mismo portal aislado." /><div className="mt-6"><ClientUserForm companies={companyOptions} /></div></section>
       </div>
 
-      <section className="mt-7 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7"><SectionTitle icon="shield" title="Equipo SERCOPREV" description="Los usuarios de lectura pueden consultar, pero las Server Actions rechazan mutaciones." /><div className="mt-5 grid gap-3">{staff.length === 0 ? <Empty text="No hay usuarios internos adicionales." /> : staff.map((user) => <UserCard key={user.id} id={user.id} type="equipo" name={user.nombre} email={user.email} role={user.rol} active={user.activo} passwordPending={user.must_change_password} />)}</div></section>
+      <section className="mt-7 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7"><SectionTitle icon="shield" title="Equipo SERCOPREV" description="Administradores y superadministradores gestionan accesos. Los demás roles no pueden abrir esta sección." /><div className="mt-5 grid gap-3">{staff.length === 0 ? <Empty text="No hay usuarios internos adicionales." /> : staff.map((user) => <UserCard key={user.id} id={user.id} type="equipo" name={user.nombre} email={user.email} role={user.rol} active={user.activo} passwordPending={user.must_change_password} />)}</div></section>
 
       <section className="mt-7 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7"><SectionTitle icon="building" title="Usuarios de clientes" description="Cada acceso adicional queda asociado a una sola empresa y hereda su aislamiento RLS." /><div className="mt-5 grid gap-3">{clientUsers.length === 0 ? <Empty text="No hay accesos adicionales de clientes." /> : clientUsers.map((user) => { const company = one(user.empresa); return <UserCard key={user.id} id={user.id} type="cliente" name={user.nombre} email={user.email} role={`${user.rol} · ${company?.nombre_fantasia || company?.razon_social || 'Sin empresa'}`} active={user.activo} passwordPending={user.must_change_password} /> })}</div></section>
 
