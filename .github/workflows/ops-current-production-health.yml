@@ -1,9 +1,8 @@
 name: Verify Current Production Health
 
 on:
-  pull_request:
-    branches: [main]
-    types: [opened, synchronize, reopened]
+  push:
+    branches: [ops/verify-prod-health-july24]
 
 permissions:
   contents: read
