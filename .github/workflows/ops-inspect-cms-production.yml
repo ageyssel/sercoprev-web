@@ -1,0 +1,67 @@
+name: Inspect CMS Production
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+      SUPABASE_URL: https://kxrxlygnhukfmdgqhoaz.supabase.co
+      TARGET_TEAM_ID: df018b32-a946-478b-a633-d2e5491e810b
+
+    steps:
+      - name: Inspect responses
+        shell: bash
+        run: |
+          set -u
+          nonce="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          home_status=$(curl -sS -L --max-time 30 -o /tmp/home.html -D /tmp/home.headers -w '%{http_code}' "https://www.sercoprev.cl/?_inspect=$nonce" || true)
+          login_status=$(curl -sS -L --max-time 30 -o /tmp/login.html -D /tmp/login.headers -w '%{http_code}' "https://www.sercoprev.cl/login?_inspect=$nonce" || true)
+          admin_status=$(curl -sS --max-time 30 -o /tmp/admin.html -D /tmp/admin.headers -w '%{http_code}' "https://www.sercoprev.cl/admin/configuracion/pagina-comercial?_inspect=$nonce" || true)
+          health_status=$(curl -sS --max-time 30 -o /tmp/health.json -D /tmp/health.headers -w '%{http_code}' "https://www.sercoprev.cl/api/health?_inspect=$nonce" || true)
+
+          curl -sS --max-time 30 \
+            -H "apikey: ${SUPABASE_SECRET_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_SECRET_KEY}" \
+            "${SUPABASE_URL}/rest/v1/pagina_comercial_equipo?id=eq.${TARGET_TEAM_ID}&select=id,nombre,foto_path" \
+            -o /tmp/team.json
+          photo_path=$(jq -r 'if length == 1 then (.[0].foto_path // "") else "" end' /tmp/team.json)
+          photo_status='not-requested'
+          if [ -n "$photo_path" ]; then
+            photo_url="${SUPABASE_URL}/storage/v1/object/public/pagina-comercial/${photo_path}"
+            photo_status=$(curl -sS -L --max-time 30 -o /tmp/photo.bin -D /tmp/photo.headers -w '%{http_code}' "$photo_url" || true)
+          fi
+
+          echo "HOME_STATUS=$home_status"
+          echo "LOGIN_STATUS=$login_status"
+          echo "ADMIN_STATUS=$admin_status"
+          echo "HEALTH_STATUS=$health_status"
+          echo "PHOTO_STATUS=$photo_status"
+          echo "PHOTO_PATH=$photo_path"
+          echo 'HOME_CSP_BEGIN'
+          grep -i '^content-security-policy:' /tmp/home.headers || true
+          echo 'HOME_CSP_END'
+          echo 'ADMIN_HEADERS_BEGIN'
+          grep -Ei '^(HTTP/|location:|content-security-policy:)' /tmp/admin.headers || true
+          echo 'ADMIN_HEADERS_END'
+          echo 'HOME_MATCHES_BEGIN'
+          grep -o -E 'Rene G. Morales[^<]{0,80}|Guillermo Paiguano[^<]{0,80}|https://kxrxlygnhukfmdgqhoaz[.]supabase[.]co[^"< ]+' /tmp/home.html | head -n 20 || true
+          echo 'HOME_MATCHES_END'
+          echo 'LOGIN_MATCHES_BEGIN'
+          grep -o -E 'Mostrar|Ocultar' /tmp/login.html | sort -u || true
+          echo 'LOGIN_MATCHES_END'
+          echo 'PHOTO_HEADERS_BEGIN'
+          grep -Ei '^(content-type:|content-length:|cache-control:)' /tmp/photo.headers 2>/dev/null || true
+          echo 'PHOTO_HEADERS_END'
+          echo 'HEALTH_BEGIN'
+          cat /tmp/health.json || true
+          echo
+          echo 'HEALTH_END'
