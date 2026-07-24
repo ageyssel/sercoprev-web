@@ -15,22 +15,11 @@ function safeFilename(value: string) {
   const base = value.replace(/\.[^.]+$/, '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 90) || 'documento'
   return `${base}${extension}`
 }
-
-function text(value: unknown, maxLength: number) {
-  return typeof value === 'string' ? value.trim().slice(0, maxLength) : ''
-}
-
-function confidence(value: unknown) {
-  const number = Number(value)
-  return Number.isFinite(number) ? Math.min(100, Math.max(0, Math.round(number))) : 0
-}
-
-function jsonObject(value: unknown) {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
-}
-
+function text(value: unknown, maxLength: number) { return typeof value === 'string' ? value.trim().slice(0, maxLength) : '' }
+function confidence(value: unknown) { const number = Number(value); return Number.isFinite(number) ? Math.min(100, Math.max(0, Math.round(number))) : 0 }
+function jsonObject(value: unknown) { return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {} }
 function authorized(request: Request) {
-  const expected = process.env.DOCUMENT_AI_TOKEN?.trim()
+  const expected = process.env.DOCUMENT_AI_TOKEN?.trim() || process.env.OFFICIAL_SYNC_TOKEN?.trim()
   const provided = request.headers.get('x-sercoprev-document-ai-token')?.trim()
   return Boolean(expected && provided && expected === provided)
 }
@@ -154,9 +143,7 @@ export async function POST(request: Request) {
     if (publishError) throw publishError
 
     const response = jsonObject(result)
-    const oldPaths = Array.isArray(response.storage_paths_eliminar)
-      ? response.storage_paths_eliminar.filter((item): item is string => typeof item === 'string' && item.length > 0)
-      : []
+    const oldPaths = Array.isArray(response.storage_paths_eliminar) ? response.storage_paths_eliminar.filter((item): item is string => typeof item === 'string' && item.length > 0) : []
     if (oldPaths.length > 0) {
       const { error: cleanupError } = await adminClient.storage.from('documentos').remove(oldPaths)
       if (cleanupError) {
