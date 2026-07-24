@@ -1,0 +1,57 @@
+name: Inspect Worker Bindings
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    if: github.head_ref == 'ops/error-3257248274-diagnostic'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 9021b712f9a73815e6b333a4870e0021
+    steps:
+      - name: Inspect binding names and types
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/worker-bindings
+          api='https://api.cloudflare.com/client/v4'
+          auth=(-H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H 'Content-Type: application/json')
+
+          settings_status=$(curl -sS --max-time 30 -o /tmp/worker-bindings/settings.json -w '%{http_code}' \
+            "${auth[@]}" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/sercoprev-web/settings" || true)
+          secrets_status=$(curl -sS --max-time 30 -o /tmp/worker-bindings/secrets.json -w '%{http_code}' \
+            "${auth[@]}" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/sercoprev-web/secrets" || true)
+          deployments_status=$(curl -sS --max-time 30 -o /tmp/worker-bindings/deployments.json -w '%{http_code}' \
+            "${auth[@]}" "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/sercoprev-web/deployments" || true)
+
+          printf 'settings=%s\nsecrets=%s\ndeployments=%s\n' "$settings_status" "$secrets_status" "$deployments_status" > /tmp/worker-bindings/statuses.txt
+
+          jq '{success, errors, bindings: [(.result.bindings // [])[]? | {name, type}], compatibility_date: .result.compatibility_date, compatibility_flags: .result.compatibility_flags, usage_model: .result.usage_model}' \
+            /tmp/worker-bindings/settings.json > /tmp/worker-bindings/settings-redacted.json 2>/dev/null || true
+          jq '{success, errors, secrets: [(.result // [])[]? | {name, type}]}' \
+            /tmp/worker-bindings/secrets.json > /tmp/worker-bindings/secrets-redacted.json 2>/dev/null || true
+          jq '{success, errors, active: (if (.result|type)=="array" then .result[0] elif (.result.deployments|type)=="array" then .result.deployments[0] else null end | {id, created_on, source, strategy, versions})}' \
+            /tmp/worker-bindings/deployments.json > /tmp/worker-bindings/deployments-redacted.json 2>/dev/null || true
+
+          cat /tmp/worker-bindings/statuses.txt
+          echo '=== SETTINGS (REDACTED) ==='
+          cat /tmp/worker-bindings/settings-redacted.json
+          echo '=== SECRETS (NAMES ONLY) ==='
+          cat /tmp/worker-bindings/secrets-redacted.json
+          echo '=== ACTIVE DEPLOYMENT ==='
+          cat /tmp/worker-bindings/deployments-redacted.json
+
+      - name: Upload binding evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: worker-bindings-redacted
+          path: /tmp/worker-bindings
+          retention-days: 3
