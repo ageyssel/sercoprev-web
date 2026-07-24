@@ -1,0 +1,141 @@
+name: Force Production Certification
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare-production
+  cancel-in-progress: true
+
+jobs:
+  deploy-and-certify:
+    if: github.head_ref == 'ops/force-production-certification-20260724'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 9021b712f9a73815e6b333a4870e0021
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      WHATSAPP_ACCESS_TOKEN: ${{ secrets.WHATSAPP_ACCESS_TOKEN }}
+      WHATSAPP_PHONE_NUMBER_ID: ${{ secrets.WHATSAPP_PHONE_NUMBER_ID }}
+
+    steps:
+      - name: Validate credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          test -n "${SUPABASE_SECRET_KEY:-}"
+          test -n "${RESEND_API_KEY:-}"
+
+      - name: Checkout latest main
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: main
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund --silent
+
+      - name: Resolve expected release
+        shell: bash
+        run: |
+          set -euo pipefail
+          health_release=$(sed -n "s/^const RELEASE = '\([^']*\)'$/\1/p" app/api/health/route.ts)
+          version_release=$(sed -n "s/^const RELEASE = '\([^']*\)'$/\1/p" app/api/version/route.ts)
+          test -n "$health_release"
+          test "$health_release" = "$version_release"
+          echo "EXPECTED_RELEASE=$health_release" >> "$GITHUB_ENV"
+
+      - name: Build Cloudflare Worker
+        run: npm run build:cloudflare
+
+      - name: Prepare atomic secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, secrets
+          from pathlib import Path
+          values = {
+              'SUPABASE_SECRET_KEY': os.environ['SUPABASE_SECRET_KEY'],
+              'RESEND_API_KEY': os.environ['RESEND_API_KEY'],
+              'OFFICIAL_SYNC_TOKEN': secrets.token_urlsafe(48),
+          }
+          for name in ('WHATSAPP_ACCESS_TOKEN', 'WHATSAPP_PHONE_NUMBER_ID'):
+              value = os.environ.get(name, '').strip()
+              if value:
+                  values[name] = value
+          path = Path('/tmp/sercoprev-secrets.json')
+          path.write_text(json.dumps(values))
+          path.chmod(0o600)
+          PY
+
+      - name: Deploy exact main
+        shell: bash
+        run: |
+          set -euo pipefail
+          trap 'rm -f /tmp/sercoprev-secrets.json' EXIT
+          npx wrangler deploy --secrets-file /tmp/sercoprev-secrets.json
+
+      - name: Verify active bindings
+        shell: bash
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/sercoprev-web/settings"
+          curl -sS --max-time 30 -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" "$api" -o /tmp/settings.json
+          jq -e '.success == true' /tmp/settings.json >/dev/null
+          for name in NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY APP_BASE_URL RESEND_FROM_EMAIL NOTIFICATION_ADMIN_EMAILS SUPABASE_SECRET_KEY RESEND_API_KEY OFFICIAL_SYNC_TOKEN ASSETS WORKER_SELF_REFERENCE; do
+            jq -e --arg name "$name" '.result.bindings | any(.name == $name)' /tmp/settings.json >/dev/null || {
+              echo "Missing Worker binding: $name"
+              jq '[.result.bindings[] | {name, type}]' /tmp/settings.json
+              exit 1
+            }
+          done
+
+      - name: Certify production
+        shell: bash
+        run: |
+          set -euo pipefail
+          checks=(publicSupabaseConfig applicationBaseUrl database operationalSchema payrollSchema accountingSchema officialIndicatorsSchema officialDataSchema officialDataHistorySchema officialDataFreshness closedRecordsProtectionSchema userAccessSchema staffMfaSchema staffMfaEmailDeliveryConfigured documentIntakeSchema administrator documentStorage)
+          healthy=false
+          for attempt in $(seq 1 72); do
+            nonce="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${attempt}"
+            home_status=$(curl -sS -L --max-time 20 -o /tmp/home.html -w '%{http_code}' "https://www.sercoprev.cl/?_verify=$nonce" || true)
+            login_status=$(curl -sS -L --max-time 20 -o /tmp/login.html -w '%{http_code}' "https://www.sercoprev.cl/login?_verify=$nonce" || true)
+            verify_status=$(curl -sS --max-time 20 -o /tmp/verify.html -w '%{http_code}' "https://www.sercoprev.cl/login/verificar-codigo?_verify=$nonce" || true)
+            health_status=$(curl -sS --max-time 20 -o /tmp/health.json -w '%{http_code}' "https://www.sercoprev.cl/api/health?_verify=$nonce" || true)
+            version_status=$(curl -sS --max-time 20 -o /tmp/version.json -w '%{http_code}' "https://www.sercoprev.cl/api/version?_verify=$nonce" || true)
+
+            valid=true
+            [ "$home_status" = 200 ] || valid=false
+            [ "$login_status" = 200 ] || valid=false
+            { [ "$verify_status" = 302 ] || [ "$verify_status" = 307 ] || [ "$verify_status" = 308 ]; } || valid=false
+            [ "$health_status" = 200 ] || valid=false
+            [ "$version_status" = 200 ] || valid=false
+            jq -e --arg release "$EXPECTED_RELEASE" '.status == "ok" and .release == $release' /tmp/health.json >/dev/null 2>&1 || valid=false
+            jq -e --arg release "$EXPECTED_RELEASE" '.service == "sercoprev-web" and .release == $release and .runtime == "cloudflare-workers"' /tmp/version.json >/dev/null 2>&1 || valid=false
+            for check in "${checks[@]}"; do
+              jq -e --arg check "$check" '.checks[$check] == true' /tmp/health.json >/dev/null 2>&1 || valid=false
+            done
+
+            if [ "$valid" = true ]; then healthy=true; break; fi
+            sleep 5
+          done
+
+          printf 'home=%s\nlogin=%s\nverify=%s\nhealth=%s\nversion=%s\nrelease=%s\n' "$home_status" "$login_status" "$verify_status" "$health_status" "$version_status" "$EXPECTED_RELEASE"
+          cat /tmp/health.json 2>/dev/null || true
+          echo
+          cat /tmp/version.json 2>/dev/null || true
+          echo
+          test "$healthy" = true
