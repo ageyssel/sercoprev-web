@@ -1,0 +1,36 @@
+name: Current Production Watch 20260725 1049
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check production health and version
+        shell: bash
+        run: |
+          set -euo pipefail
+          nonce="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-$(date +%s)"
+          health_status=$(curl -sS --max-time 25 -H 'Cache-Control: no-cache' -o health.json -w '%{http_code}' "https://www.sercoprev.cl/api/health?_verify=$nonce")
+          version_status=$(curl -sS --max-time 25 -H 'Cache-Control: no-cache' -o version.json -w '%{http_code}' "https://www.sercoprev.cl/api/version?_verify=$nonce")
+          echo "HEALTH_HTTP=$health_status"
+          cat health.json
+          echo
+          echo "VERSION_HTTP=$version_status"
+          cat version.json
+          echo
+          test "$health_status" = '200'
+          test "$version_status" = '200'
+          jq -e '.status == "ok"' health.json >/dev/null
+          jq -e '.release == "2026-07-24-document-ai-tax-folder-1"' health.json >/dev/null
+          jq -e '.release == "2026-07-24-document-ai-tax-folder-1" and .service == "sercoprev-web" and .runtime == "cloudflare-workers"' version.json >/dev/null
+          for check in publicSupabaseConfig applicationBaseUrl database operationalSchema payrollSchema accountingSchema officialIndicatorsSchema officialDataSchema officialDataHistorySchema officialDataFreshness closedRecordsProtectionSchema userAccessSchema auditTrailSchema commercialSiteSchema staffMfaSchema staffMfaEmailDeliveryConfigured documentIntakeSchema documentAiSchema documentAiTokenConfigured administrator documentStorage; do
+            jq -e --arg check "$check" '.checks[$check] == true' health.json >/dev/null
+          done
