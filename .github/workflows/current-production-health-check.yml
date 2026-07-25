@@ -1,0 +1,37 @@
+name: Current Production Health Check
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check live production endpoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          nonce="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-$(date +%s)"
+          hstatus=$(curl -sS --max-time 30 -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' -o health.json -w '%{http_code}' "https://www.sercoprev.cl/api/health?_verify=${nonce}")
+          vstatus=$(curl -sS --max-time 30 -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' -o version.json -w '%{http_code}' "https://www.sercoprev.cl/api/version?_verify=${nonce}")
+          echo "HEALTH_HTTP=$hstatus"
+          echo "VERSION_HTTP=$vstatus"
+          echo 'HEALTH_BODY='
+          cat health.json
+          echo
+          echo 'VERSION_BODY='
+          cat version.json
+          echo
+          test "$hstatus" = '200'
+          test "$vstatus" = '200'
+          jq -e '.status == "ok"' health.json >/dev/null
+          jq -e '.release == "2026-07-24-document-ai-tax-folder-1"' health.json >/dev/null
+          jq -e '.checks.officialDataHistorySchema == true' health.json >/dev/null
+          jq -e '[.checks[]] | all(. == true)' health.json >/dev/null
+          jq -e '.service == "sercoprev-web" and .release == "2026-07-24-document-ai-tax-folder-1" and .runtime == "cloudflare-workers"' version.json >/dev/null
