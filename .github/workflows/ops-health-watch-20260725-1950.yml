@@ -1,0 +1,32 @@
+name: Verify SERCOPREV Production Health
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check live production endpoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          nonce="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-$(date +%s)"
+          hstatus=$(curl -sS --max-time 25 -H 'Cache-Control: no-cache' -o health.json -w '%{http_code}' "https://www.sercoprev.cl/api/health?_verify=${nonce}")
+          vstatus=$(curl -sS --max-time 25 -H 'Cache-Control: no-cache' -o version.json -w '%{http_code}' "https://www.sercoprev.cl/api/version?_verify=${nonce}")
+          echo "HEALTH_HTTP=$hstatus"
+          echo "VERSION_HTTP=$vstatus"
+          echo 'HEALTH_JSON='
+          cat health.json
+          echo
+          echo 'VERSION_JSON='
+          cat version.json
+          echo
+          jq -e '.release and (.release | startswith("2026-07-"))' version.json >/dev/null
+          jq -e '.release == input.release' health.json version.json >/dev/null
