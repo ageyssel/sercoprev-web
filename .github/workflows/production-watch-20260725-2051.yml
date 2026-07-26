@@ -1,0 +1,47 @@
+name: Production Watch 20260725 2051
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout main release contract
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: main
+      - name: Check production endpoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected=$(sed -n "s/^const RELEASE = '\([^']*\)'$/\1/p" app/api/version/route.ts)
+          test -n "$expected"
+          nonce="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-$(date +%s)"
+          health_status=$(curl -sS --max-time 25 -H 'Cache-Control: no-cache' -o health.json -w '%{http_code}' "https://www.sercoprev.cl/api/health?_verify=$nonce")
+          version_status=$(curl -sS --max-time 25 -H 'Cache-Control: no-cache' -o version.json -w '%{http_code}' "https://www.sercoprev.cl/api/version?_verify=$nonce")
+          echo "EXPECTED_RELEASE=$expected"
+          echo "HEALTH_HTTP=$health_status"
+          echo "VERSION_HTTP=$version_status"
+          echo 'HEALTH_BODY='
+          cat health.json
+          echo
+          echo 'VERSION_BODY='
+          cat version.json
+          echo
+          failing=$(jq -r '.checks // {} | to_entries | map(select(.value != true) | .key) | join(",")' health.json 2>/dev/null || true)
+          detected=$(jq -r '.release // "missing"' version.json 2>/dev/null || true)
+          health_release=$(jq -r '.release // "missing"' health.json 2>/dev/null || true)
+          echo "DETECTED_RELEASE=$detected"
+          echo "HEALTH_RELEASE=$health_release"
+          echo "FAILING_CHECKS=${failing:-none}"
+          test "$health_status" = '200'
+          test "$version_status" = '200'
+          jq -e --arg release "$expected" '.status == "ok" and .release == $release and .checks.officialDataHistorySchema == true and ([.checks[]] | all)' health.json >/dev/null
+          jq -e --arg release "$expected" '.service == "sercoprev-web" and .release == $release and .runtime == "cloudflare-workers"' version.json >/dev/null
