@@ -1,0 +1,23 @@
+name: Production Health Check
+on:
+  pull_request:
+    branches: [main]
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Verify endpoints
+        run: |
+          nonce="${GITHUB_RUN_ID}-$(date +%s)"
+          health_status=$(curl -sS -o health.json -w '%{http_code}' "https://www.sercoprev.cl/api/health?_verify=$nonce")
+          version_status=$(curl -sS -o version.json -w '%{http_code}' "https://www.sercoprev.cl/api/version?_verify=$nonce")
+          echo "HEALTH_HTTP_STATUS=$health_status"
+          cat health.json
+          echo
+          echo "VERSION_HTTP_STATUS=$version_status"
+          cat version.json
+          echo
+          test "$health_status" = "200"
+          test "$version_status" = "200"
+          jq -e '.status == "ok" and .release == "2026-07-24-document-ai-tax-folder-1" and .checks.officialDataHistorySchema == true' health.json
+          jq -e '.service == "sercoprev-web" and .release == "2026-07-24-document-ai-tax-folder-1"' version.json
