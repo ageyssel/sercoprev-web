@@ -1,0 +1,40 @@
+name: SERCOPREV Production Health Check 20260726-0447
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check production health and version
+        shell: bash
+        run: |
+          set -euo pipefail
+          nonce="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-$(date +%s)"
+          health_url="https://www.sercoprev.cl/api/health?_verify=${nonce}"
+          version_url="https://www.sercoprev.cl/api/version?_verify=${nonce}"
+          health_status=$(curl -sS --max-time 25 -H 'Cache-Control: no-cache' -o health.json -w '%{http_code}' "$health_url" || true)
+          version_status=$(curl -sS --max-time 25 -H 'Cache-Control: no-cache' -o version.json -w '%{http_code}' "$version_url" || true)
+          echo "HEALTH_HTTP=$health_status"
+          cat health.json || true
+          echo
+          echo "VERSION_HTTP=$version_status"
+          cat version.json || true
+          echo
+          test "$health_status" = '200' || exit 20
+          test "$version_status" = '200' || exit 21
+          jq -e '.status == "ok"' health.json >/dev/null || exit 22
+          jq -e '.checks.officialDataHistorySchema == true' health.json >/dev/null || exit 23
+          jq -e '[.checks | to_entries[] | select(.value != true)] | length == 0' health.json >/dev/null || exit 24
+          health_release=$(jq -r '.release // empty' health.json)
+          version_release=$(jq -r '.release // empty' version.json)
+          test -n "$health_release" || exit 25
+          test "$health_release" = "$version_release" || exit 26
+          test "$health_release" = '2026-07-24-document-ai-tax-folder-1' || exit 27
