@@ -1,0 +1,42 @@
+name: SERCOPREV Production Watch 20260726 0750
+
+on:
+  push:
+    branches:
+      - ops/production-watch-20260726-0750
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Check production endpoints with cache busting
+        shell: bash
+        run: |
+          set -uo pipefail
+          expected=$(sed -n "s/^const RELEASE = '\([^']*\)'$/\1/p" app/api/version/route.ts)
+          nonce="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-$(date +%s)"
+          health_status=$(curl -sS --retry 2 --retry-delay 2 --max-time 25 -H 'Cache-Control: no-cache' -o health.json -w '%{http_code}' "https://www.sercoprev.cl/api/health?_verify=${nonce}" || echo 000)
+          version_status=$(curl -sS --retry 2 --retry-delay 2 --max-time 25 -H 'Cache-Control: no-cache' -o version.json -w '%{http_code}' "https://www.sercoprev.cl/api/version?_verify=${nonce}" || echo 000)
+          echo "EXPECTED_MAIN_RELEASE=${expected}"
+          echo "HEALTH_HTTP=${health_status}"
+          echo "VERSION_HTTP=${version_status}"
+          echo 'HEALTH_JSON_BEGIN'
+          cat health.json 2>/dev/null || true
+          echo
+          echo 'HEALTH_JSON_END'
+          echo 'VERSION_JSON_BEGIN'
+          cat version.json 2>/dev/null || true
+          echo
+          echo 'VERSION_JSON_END'
+
+          valid=true
+          [ "$health_status" = '200' ] || valid=false
+          [ "$version_status" = '200' ] || valid=false
+          jq -e --arg release "$expected" '.status == "ok" and .release == $release and .checks.officialDataHistorySchema == true and ([.checks[]] | all)' health.json >/dev/null 2>&1 || valid=false
+          jq -e --arg release "$expected" '.service == "sercoprev-web" and .release == $release and .runtime == "cloudflare-workers"' version.json >/dev/null 2>&1 || valid=false
+          test "$valid" = true
