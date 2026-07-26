@@ -1,0 +1,56 @@
+name: Verify SERCOPREV Production Health 20260726 0047
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check production endpoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          nonce="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-$(date +%s%N)"
+          hstatus=$(curl -sS --max-time 25 -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' -o health.json -w '%{http_code}' "https://www.sercoprev.cl/api/health?_verify=$nonce")
+          vstatus=$(curl -sS --max-time 25 -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' -o version.json -w '%{http_code}' "https://www.sercoprev.cl/api/version?_verify=$nonce")
+          echo "HEALTH_HTTP=$hstatus"
+          echo "VERSION_HTTP=$vstatus"
+          echo 'HEALTH_JSON_BEGIN'
+          cat health.json
+          echo
+          echo 'HEALTH_JSON_END'
+          echo 'VERSION_JSON_BEGIN'
+          cat version.json
+          echo
+          echo 'VERSION_JSON_END'
+
+          jq -e '.release | type == "string" and length > 0' health.json >/dev/null
+          jq -e '.release | type == "string" and length > 0' version.json >/dev/null
+          jq -e '.checks.officialDataHistorySchema == true' health.json >/dev/null
+
+          health_release=$(jq -r '.release' health.json)
+          version_release=$(jq -r '.release' version.json)
+          test "$health_release" = "$version_release"
+
+          python - <<'PY'
+          import json, re
+          with open('health.json') as f:
+              h=json.load(f)
+          release=h.get('release','')
+          baseline='2026-07-23-immutable-payroll-indicators-1'
+          if not re.fullmatch(r'2026-07-(23|24|25|26)-[a-z0-9-]+', release):
+              raise SystemExit(f'unexpected release format: {release}')
+          if release == baseline:
+              pass
+          elif release.startswith('2026-07-24-') or release.startswith('2026-07-25-') or release.startswith('2026-07-26-'):
+              pass
+          else:
+              raise SystemExit(f'older or unconfirmed release: {release}')
+          PY
