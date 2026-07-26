@@ -1,0 +1,26 @@
+name: SERCOPREV Compact Production Probe 20260726 0750
+
+on:
+  pull_request:
+    branches: [main]
+    types: [synchronize]
+
+permissions: {}
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Probe
+        shell: bash
+        run: |
+          set +e
+          nonce="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-$(date +%s)"
+          hs=$(curl -sS --max-time 20 -H 'Cache-Control: no-cache' -o h.json -w '%{http_code}' "https://www.sercoprev.cl/api/health?_verify=${nonce}")
+          vs=$(curl -sS --max-time 20 -H 'Cache-Control: no-cache' -o v.json -w '%{http_code}' "https://www.sercoprev.cl/api/version?_verify=${nonce}")
+          echo "HEALTH_HTTP=$hs"
+          echo "VERSION_HTTP=$vs"
+          echo -n 'HEALTH_JSON='; cat h.json; echo
+          echo -n 'VERSION_JSON='; cat v.json; echo
+          exit 0
