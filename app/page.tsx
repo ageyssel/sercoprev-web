@@ -33,7 +33,7 @@ export default async function HomePage() {
           <BrandLogo inverse />
           <nav className="hidden items-center gap-1 lg:flex" aria-label="Navegación principal">
             <NavLink href="#servicios">Servicios</NavLink>
-            <NavLink href="#equipo">Equipo</NavLink>
+            <NavLink href="#equipo">Quienes Somos</NavLink>
             {config.reviews_enabled && <NavLink href="#resenas">Reseñas</NavLink>}
             <NavLink href="#metodo">Cómo trabajamos</NavLink>
             <NavLink href="#portal">Portal digital</NavLink>
@@ -48,7 +48,7 @@ export default async function HomePage() {
             </summary>
             <div className="absolute right-0 top-14 grid w-72 gap-1 rounded-2xl border border-slate-200 bg-white p-3 text-[#17324a] shadow-2xl">
               <MobileLink href="#servicios">Servicios</MobileLink>
-              <MobileLink href="#equipo">Equipo</MobileLink>
+              <MobileLink href="#equipo">Quienes Somos</MobileLink>
               {config.reviews_enabled && <MobileLink href="#resenas">Reseñas</MobileLink>}
               <MobileLink href="#metodo">Cómo trabajamos</MobileLink>
               <MobileLink href="#portal">Portal digital</MobileLink>
