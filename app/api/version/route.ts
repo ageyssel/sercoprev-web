@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 
 export const dynamic = 'force-dynamic'
 
-const RELEASE = '2026-07-24-document-ai-tax-folder-1'
+const RELEASE = '2026-08-17-formulas-rut-1'
 
 export async function GET() {
   return NextResponse.json(
