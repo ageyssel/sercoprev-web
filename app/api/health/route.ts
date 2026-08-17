@@ -4,7 +4,7 @@ import { getApplicationBaseUrl, getSupabasePublicConfig } from '@/utils/supabase
 
 export const dynamic = 'force-dynamic'
 
-const RELEASE = '2026-07-24-document-ai-tax-folder-1'
+const RELEASE = '2026-08-17-formulas-rut-1'
 const OFFICIAL_DATA_MAX_AGE_MS = 48 * 60 * 60 * 1000
 
 type QueryResult = { error: unknown }
@@ -60,6 +60,7 @@ export async function GET() {
       supabase.from('empresas').select('id, estado_cliente, contador_asignado, plan_servicio').limit(1),
       supabase.from('tareas').select('id, serie_id, periodo_recurrente, es_recurrente').limit(1),
       supabase.from('solicitudes_documentos').select('id, estado').limit(1),
+      supabase.from('leads').select('id, deleted_at, deleted_by, delete_reason').limit(1),
       supabase.from('auditoria_eventos').select('id, accion').limit(1),
       supabase.from('notificaciones').select('id, canal, estado').limit(1),
     ]))
@@ -71,9 +72,33 @@ export async function GET() {
       supabase.from('trabajadores').select('id, empresa_id, estado').limit(1),
       supabase.from('parametros_remuneraciones').select('id, periodo, uf_fecha, utm_periodo, fuentes_automaticas').limit(1),
       supabase.from('periodos_remuneraciones').select('id, periodo, estado, parametros_id').limit(1),
-      supabase.from('liquidaciones').select('id, estado').limit(1),
+      supabase.from('liquidaciones').select('id, estado, calculo').limit(1),
       supabase.from('finiquitos').select('id, estado').limit(1),
     ]))
+  })
+
+  const formulaSchema = await safeCheck('FORMULA_SCHEMA', async () => {
+    const supabase = createAdminClient()
+    const [definitions, versions, tests, migration, publishRpc] = await Promise.all([
+      supabase.from('formula_definitions').select('id, code, default_expression, active').limit(1),
+      supabase.from('formula_versions').select('id, formula_id, version, expression, status, effective_from, effective_to').limit(1),
+      supabase.from('formula_test_cases').select('id, formula_id, inputs, expected_result').limit(1),
+      supabase.from('sercoprev_schema_migrations').select('filename').eq('filename', '202608170022_atomic_formula_publication.sql').maybeSingle(),
+      supabase.rpc('publicar_version_formula', { p_version_id: '00000000-0000-0000-0000-000000000000', p_actor_user_id: '00000000-0000-0000-0000-000000000000' }),
+    ])
+
+    // La RPC debe existir; con un UUID inexistente debe responder con el error funcional esperado,
+    // no con "function not found". No se publica ni modifica ningún registro durante este check.
+    const rpcExists = Boolean(publishRpc.error)
+      && !String(publishRpc.error?.message ?? '').toLowerCase().includes('could not find the function')
+      && !String(publishRpc.error?.message ?? '').toLowerCase().includes('function public.publicar_version_formula')
+
+    return !definitions.error
+      && !versions.error
+      && !tests.error
+      && !migration.error
+      && migration.data?.filename === '202608170022_atomic_formula_publication.sql'
+      && rpcExists
   })
 
   const accountingSchema = await safeCheck('ACCOUNTING_SCHEMA', async () => {
@@ -111,6 +136,9 @@ export async function GET() {
     ]))
   })
 
+  // Diagnóstico informativo: puede advertir que datos de referencia externos están antiguos,
+  // pero no declara indisponible la plataforma. SERCOPREV debe seguir operativo aunque esas
+  // fuentes no hayan sido actualizadas recientemente.
   const officialDataFreshness = await safeCheck('OFFICIAL_DATA_FRESHNESS', async () => {
     const supabase = createAdminClient()
     const currentPeriod = currentChilePeriod()
@@ -241,6 +269,7 @@ export async function GET() {
     database,
     operationalSchema,
     payrollSchema,
+    formulaSchema,
     accountingSchema,
     officialIndicatorsSchema,
     officialDataSchema,
@@ -258,10 +287,41 @@ export async function GET() {
     administrator,
     documentStorage,
   }
-  const healthy = Object.values(checks).every(Boolean)
+
+  // Sólo fallos que impiden operar SERCOPREV degradan el endpoint a 503.
+  // La frescura de fuentes externas se mantiene visible como advertencia diagnóstica.
+  const criticalChecks = {
+    publicSupabaseConfig,
+    applicationBaseUrl,
+    database,
+    operationalSchema,
+    payrollSchema,
+    formulaSchema,
+    accountingSchema,
+    officialIndicatorsSchema,
+    officialDataSchema,
+    officialDataHistorySchema,
+    closedRecordsProtectionSchema,
+    userAccessSchema,
+    auditTrailSchema,
+    commercialSiteSchema,
+    staffMfaSchema,
+    staffMfaEmailDeliveryConfigured,
+    documentIntakeSchema,
+    documentAiSchema,
+    documentAiTokenConfigured,
+    administrator,
+    documentStorage,
+  }
+  const healthy = Object.values(criticalChecks).every(Boolean)
 
   return NextResponse.json(
-    { status: healthy ? 'ok' : 'degraded', release: RELEASE, checks },
+    {
+      status: healthy ? 'ok' : 'degraded',
+      release: RELEASE,
+      checks,
+      warnings: officialDataFreshness ? [] : ['officialDataFreshness'],
+    },
     { status: healthy ? 200 : 503, headers: { 'Cache-Control': 'no-store, max-age=0', 'X-Robots-Tag': 'noindex, nofollow, noarchive' } },
   )
 }

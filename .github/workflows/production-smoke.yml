@@ -52,13 +52,13 @@ jobs:
             if verify_endpoint \
               'https://www.sercoprev.cl/' \
               '200' \
-              'SERCOPREV' \
+              '40+' \
               /tmp/home.html \
               /tmp/home.headers \
               && verify_endpoint \
               'https://www.sercoprev.cl/login' \
               '200' \
-              'Acceso Portal' \
+              'Correo o RUT' \
               /tmp/login.html \
               /tmp/login.headers \
               && verify_endpoint \
@@ -113,7 +113,7 @@ jobs:
 
           test "$apex_login_status" = '200'
           test "$apex_health_status" = '200'
-          grep -qi 'Acceso Portal' /tmp/apex-login.html
+          grep -qi 'Correo o RUT' /tmp/apex-login.html
           grep -q '"status":"ok"' /tmp/apex-health.json
 
           echo 'Production verification passed.'
