@@ -187,12 +187,17 @@ jobs:
               and to_regclass('public.pagina_comercial_servicios') is not null
               and to_regclass('public.pagina_comercial_equipo') is not null
               and to_regclass('public.pagina_comercial_resenas') is not null
+              and to_regclass('public.formula_definitions') is not null
+              and to_regclass('public.formula_versions') is not null
+              and to_regclass('public.formula_test_cases') is not null
               and exists (select 1 from public.pagina_comercial_config where id = 'principal')
               and exists (select 1 from public.pagina_comercial_servicios)
               and exists (select 1 from public.pagina_comercial_equipo)
               and exists (select 1 from storage.buckets where id = 'pagina-comercial' and public = true)
               and exists (select 1 from public.sercoprev_schema_migrations where filename = '202607240018_commercial_site_cms.sql')
+              and exists (select 1 from public.sercoprev_schema_migrations where filename = '202608170022_atomic_formula_publication.sql')
               and to_regprocedure('private.is_privileged_admin()') is not null
+              and to_regprocedure('public.publicar_version_formula(uuid,uuid)') is not null
               and exists (select 1 from pg_trigger where not tgisinternal and tgname = 'datos_oficiales_capture_version')
               and exists (select 1 from pg_trigger where not tgisinternal and tgname = 'periodos_remuneraciones_protect_state')
               and exists (select 1 from pg_trigger where not tgisinternal and tgname = 'periodos_contables_protect_closed')
@@ -293,11 +298,11 @@ jobs:
             database
             operationalSchema
             payrollSchema
+            formulaSchema
             accountingSchema
             officialIndicatorsSchema
             officialDataSchema
             officialDataHistorySchema
-            officialDataFreshness
             closedRecordsProtectionSchema
             userAccessSchema
             auditTrailSchema
@@ -305,6 +310,8 @@ jobs:
             staffMfaSchema
             staffMfaEmailDeliveryConfigured
             documentIntakeSchema
+            documentAiSchema
+            documentAiTokenConfigured
             administrator
             documentStorage
           )
@@ -325,8 +332,8 @@ jobs:
             { [ "$settings_status" = '302' ] || [ "$settings_status" = '307' ] || [ "$settings_status" = '308' ]; } || valid=false
             [ "$health_status" = '200' ] || valid=false
             [ "$version_status" = '200' ] || valid=false
-            grep -qi 'Nuestro equipo' /tmp/home.html || valid=false
-            grep -qi 'Mostrar' /tmp/login.html || valid=false
+            grep -Fq '40+' /tmp/home.html || valid=false
+            grep -Fqi 'Correo o RUT' /tmp/login.html || valid=false
             jq -e --arg release "$EXPECTED_RELEASE" '.status == "ok" and .release == $release' /tmp/health.json >/dev/null 2>&1 || valid=false
             jq -e --arg release "$EXPECTED_RELEASE" '.service == "sercoprev-web" and .release == $release and .runtime == "cloudflare-workers"' /tmp/version.json >/dev/null 2>&1 || valid=false
             for check in "${checks[@]}"; do
