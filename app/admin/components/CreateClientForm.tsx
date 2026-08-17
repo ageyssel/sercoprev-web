@@ -1,21 +1,21 @@
 'use client'
 
 import { useActionState } from 'react'
-import { crearCliente, type AdminActionState } from '../actions'
+import { crearClienteConRut, type CreateClientState } from '../create-client-actions'
 import { SubmitButton } from './SubmitButton'
 
-const INITIAL_STATE: AdminActionState = {
+const INITIAL_STATE: CreateClientState = {
   status: 'idle',
   message: '',
 }
 
 export function CreateClientForm() {
-  const [state, formAction] = useActionState(crearCliente, INITIAL_STATE)
+  const [state, formAction] = useActionState(crearClienteConRut, INITIAL_STATE)
 
   return (
     <form action={formAction} className="space-y-4">
       <div>
-        <label htmlFor="razon_social" className="block text-sm font-semibold text-gray-700 mb-1">
+        <label htmlFor="razon_social" className="mb-1 block text-sm font-semibold text-gray-700">
           Razón Social de la Empresa
         </label>
         <input
@@ -26,13 +26,13 @@ export function CreateClientForm() {
           minLength={2}
           maxLength={160}
           autoComplete="organization"
-          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-gray-900 placeholder-gray-500 bg-white"
+          className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 outline-none placeholder-gray-500 focus:ring-2 focus:ring-blue-500"
           placeholder="Ej. Comercializadora SpA"
         />
       </div>
 
       <div>
-        <label htmlFor="rut" className="block text-sm font-semibold text-gray-700 mb-1">
+        <label htmlFor="rut" className="mb-1 block text-sm font-semibold text-gray-700">
           RUT Empresa
         </label>
         <input
@@ -41,30 +41,31 @@ export function CreateClientForm() {
           type="text"
           required
           maxLength={20}
-          autoComplete="off"
-          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-gray-900 placeholder-gray-500 bg-white"
+          autoComplete="username"
+          className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 outline-none placeholder-gray-500 focus:ring-2 focus:ring-blue-500"
           placeholder="Ej. 76.123.456-7"
         />
+        <p className="mt-2 text-xs text-gray-500">El RUT será el identificador de acceso principal del cliente.</p>
       </div>
 
       <div>
-        <label htmlFor="email" className="block text-sm font-semibold text-gray-700 mb-1">
-          Correo de Acceso
+        <label htmlFor="email" className="mb-1 block text-sm font-semibold text-gray-700">
+          Correo de contacto <span className="font-normal text-gray-400">(opcional)</span>
         </label>
         <input
           id="email"
           name="email"
           type="email"
-          required
           maxLength={254}
           autoComplete="email"
-          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-gray-900 placeholder-gray-500 bg-white"
+          className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 outline-none placeholder-gray-500 focus:ring-2 focus:ring-blue-500"
           placeholder="cliente@correo.cl"
         />
+        <p className="mt-2 text-xs text-gray-500">Puede dejarlo vacío. El cliente igualmente podrá ingresar con su RUT y contraseña.</p>
       </div>
 
       <div>
-        <label htmlFor="password" className="block text-sm font-semibold text-gray-700 mb-1">
+        <label htmlFor="password" className="mb-1 block text-sm font-semibold text-gray-700">
           Contraseña Temporal
         </label>
         <input
@@ -75,7 +76,7 @@ export function CreateClientForm() {
           minLength={12}
           maxLength={128}
           autoComplete="new-password"
-          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-gray-900 placeholder-gray-500 bg-white"
+          className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 outline-none placeholder-gray-500 focus:ring-2 focus:ring-blue-500"
           placeholder="12+ caracteres, mayúscula, número y símbolo"
         />
         <p className="mt-2 text-xs text-gray-500">
@@ -100,7 +101,7 @@ export function CreateClientForm() {
       <SubmitButton
         text="Registrar Cliente"
         loadingText="Creando cuenta..."
-        className="w-full bg-[#1d4ed8] hover:bg-blue-800 text-white font-bold py-3 rounded-lg mt-4"
+        className="mt-4 w-full rounded-lg bg-[#1d4ed8] py-3 font-bold text-white hover:bg-blue-800"
       />
     </form>
   )
