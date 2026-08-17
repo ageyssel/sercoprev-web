@@ -144,26 +144,18 @@ export async function publicarVersionFormula(formData: FormData) {
     redirect(`/admin/formulas?error=${encodeURIComponent(message)}#formula-${version.formula_id}`)
   }
 
-  const start = new Date(`${version.effective_from}T12:00:00Z`)
-  start.setUTCDate(start.getUTCDate() - 1)
-  const previousEnd = start.toISOString().slice(0, 10)
+  const { error: publishError } = await adminClient.rpc('publicar_version_formula', {
+    p_version_id: versionId,
+    p_actor_user_id: actorUserId,
+  })
 
-  const { error: replaceError } = await adminClient
-    .from('formula_versions')
-    .update({ status: 'Reemplazada', effective_to: previousEnd, updated_at: new Date().toISOString() })
-    .eq('formula_id', version.formula_id)
-    .eq('status', 'Publicada')
-    .neq('id', versionId)
-  if (replaceError) redirect('/admin/formulas?error=No fue posible cerrar la versión anterior')
-
-  const { error: publishError } = await adminClient.from('formula_versions').update({
-    status: 'Publicada',
-    approved_by: actorUserId,
-    published_at: new Date().toISOString(),
-    effective_to: null,
-    updated_at: new Date().toISOString(),
-  }).eq('id', versionId)
-  if (publishError) redirect('/admin/formulas?error=No fue posible publicar la versión')
+  if (publishError) {
+    const message = publishError.message.includes('EFFECTIVE_DATE_MUST_FOLLOW_CURRENT_VERSION')
+      ? 'La nueva fecha de vigencia debe ser posterior al inicio de la versión publicada actual.'
+      : 'No fue posible publicar la versión de manera segura.'
+    console.error('FORMULA_ATOMIC_PUBLISH_FAILED', publishError.message)
+    redirect(`/admin/formulas?error=${encodeURIComponent(message)}#formula-${version.formula_id}`)
+  }
 
   await audit(adminClient, actorUserId, {
     action: 'publicar',
