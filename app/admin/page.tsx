@@ -66,10 +66,10 @@ export default async function AdminPage() {
     supabase.from('obligaciones').select('id', { count: 'exact', head: true }).not('estado', 'in', '(Presentada,Pagada,No aplica)'),
     supabase.from('obligaciones').select('id', { count: 'exact', head: true }).lt('fecha_vencimiento', today).not('estado', 'in', '(Presentada,Pagada,No aplica)'),
     supabase.from('solicitudes_documentos').select('id', { count: 'exact', head: true }).not('estado', 'in', '(Aprobado,Vencido)'),
-    supabase.from('leads').select('id', { count: 'exact', head: true }).not('estado', 'in', '(Ganado,Descartado)'),
+    supabase.from('leads').select('id', { count: 'exact', head: true }).is('deleted_at', null).not('estado', 'in', '(Ganado,Descartado)'),
     supabase.from('obligaciones').select('id, titulo, fecha_vencimiento, estado, prioridad, empresa_id, empresa:empresas(razon_social)').gte('fecha_vencimiento', today).lte('fecha_vencimiento', inThirtyDays).not('estado', 'in', '(Presentada,Pagada,No aplica)').order('fecha_vencimiento').limit(8),
     supabase.from('tareas').select('id, titulo, fecha_vencimiento, estado, prioridad, responsable, empresa_id, empresa:empresas(razon_social)').not('estado', 'eq', 'Completada').order('fecha_vencimiento', { ascending: true, nullsFirst: false }).limit(8),
-    supabase.from('leads').select('id, nombre, empresa, servicio, estado, created_at').order('created_at', { ascending: false }).limit(6),
+    supabase.from('leads').select('id, nombre, empresa, servicio, estado, created_at').is('deleted_at', null).order('created_at', { ascending: false }).limit(6),
     supabase.from('empresas').select('id, razon_social, estado_cliente, ultima_actividad_at').eq('es_admin', false).in('estado_cliente', ['En incorporación', 'Requiere atención', 'Suspendido']).order('updated_at', { ascending: false }).limit(6),
   ])
 

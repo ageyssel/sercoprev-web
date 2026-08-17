@@ -2,6 +2,7 @@
 
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
+import { createAdminClient } from '@/utils/supabase/admin'
 import { createClient } from '../../utils/supabase/server'
 import { resolveUserContext } from '@/utils/supabase/user-context'
 import {
@@ -14,15 +15,66 @@ import {
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const ACCESS_UNAVAILABLE_MESSAGE = 'El servicio de acceso no está disponible temporalmente. Intente nuevamente en unos segundos'
 
+function normalizeRut(value: string) {
+  return value.replace(/\./g, '').replace(/\s/g, '').toUpperCase()
+}
+
+function isValidChileanRut(value: string) {
+  const normalized = normalizeRut(value)
+  if (!/^\d{7,8}-[\dK]$/.test(normalized)) return false
+  const [body, verifier] = normalized.split('-')
+  let sum = 0
+  let multiplier = 2
+  for (let index = body.length - 1; index >= 0; index -= 1) {
+    sum += Number(body[index]) * multiplier
+    multiplier = multiplier === 7 ? 2 : multiplier + 1
+  }
+  const remainder = 11 - (sum % 11)
+  const expected = remainder === 11 ? '0' : remainder === 10 ? 'K' : String(remainder)
+  return verifier === expected
+}
+
+async function resolveAuthEmail(identifier: string) {
+  const normalizedIdentifier = identifier.trim().toLowerCase()
+  if (EMAIL_PATTERN.test(normalizedIdentifier)) return normalizedIdentifier
+
+  const rut = normalizeRut(identifier)
+  if (!isValidChileanRut(rut)) return null
+
+  try {
+    const directory = createAdminClient()
+    const { data: company, error: companyError } = await directory
+      .from('empresas')
+      .select('user_id')
+      .eq('rut', rut)
+      .eq('es_admin', false)
+      .limit(1)
+      .maybeSingle()
+
+    if (companyError || !company?.user_id) return null
+    const { data, error } = await directory.auth.admin.getUserById(company.user_id)
+    if (error || !data.user?.email || !EMAIL_PATTERN.test(data.user.email)) return null
+    return data.user.email.trim().toLowerCase()
+  } catch (error) {
+    console.error('LOGIN_RUT_RESOLUTION_FAILED', error)
+    return null
+  }
+}
+
 export async function login(formData: FormData) {
-  const email = typeof formData.get('email') === 'string'
-    ? String(formData.get('email')).trim().toLowerCase().slice(0, 254)
-    : ''
+  const identifier = typeof formData.get('identifier') === 'string'
+    ? String(formData.get('identifier')).trim().slice(0, 254)
+    : typeof formData.get('email') === 'string'
+      ? String(formData.get('email')).trim().slice(0, 254)
+      : ''
   const password = typeof formData.get('password') === 'string'
     ? String(formData.get('password')).slice(0, 128)
     : ''
 
-  if (!EMAIL_PATTERN.test(email) || password.length < 8) redirect('/login?message=Credenciales incorrectas')
+  if (!identifier || password.length < 8) redirect('/login?message=Credenciales incorrectas')
+
+  const email = await resolveAuthEmail(identifier)
+  if (!email) redirect('/login?message=Credenciales incorrectas')
 
   const supabase = await createClient().catch((error) => {
     console.error('LOGIN_SUPABASE_CLIENT_FAILED', error)
@@ -85,9 +137,7 @@ export async function login(formData: FormData) {
       redirect(`/login?message=${encodeURIComponent(ACCESS_UNAVAILABLE_MESSAGE)}`)
     }
 
-    if (pending) {
-      redirect('/login/verificar-codigo?message=Ya enviamos un código vigente a su correo')
-    }
+    if (pending) redirect('/login/verificar-codigo?message=Ya enviamos un código vigente a su correo')
 
     try {
       await startStaffMfaChallenge({
