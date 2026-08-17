@@ -11,7 +11,7 @@ import {
 } from '@/lib/formula-friendly'
 import { requireAdmin } from '@/utils/supabase/require-admin'
 
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 function clean(value: unknown, maxLength: number) {
   return typeof value === 'string' ? value.trim().slice(0, maxLength) : ''
@@ -30,14 +30,16 @@ function variableCodes(value: unknown) {
 
 function variableDefinitions(value: unknown): VariableDefinition[] {
   if (!Array.isArray(value)) return []
-  return value
-    .map((item) => {
-      if (!item || typeof item !== 'object') return null
-      const code = String((item as VariableDefinition).code ?? '').trim().toUpperCase()
-      if (!code) return null
-      return { code, description: String((item as VariableDefinition).description ?? '').trim() }
-    })
-    .filter((item): item is VariableDefinition => Boolean(item))
+  const result: VariableDefinition[] = []
+  for (const item of value) {
+    if (!item || typeof item !== 'object') continue
+    const source = item as VariableDefinition
+    const code = String(source.code ?? '').trim().toUpperCase()
+    if (!code) continue
+    const description = String(source.description ?? '').trim()
+    result.push(description ? { code, description } : { code })
+  }
+  return result
 }
 
 async function loadFormula(adminClient: AdminClient, formulaId: string) {
