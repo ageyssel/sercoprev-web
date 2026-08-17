@@ -32,6 +32,7 @@ const groups: Group[] = [
       { href: '/admin/indicadores', label: 'Indicadores oficiales', icon: 'money', badge: 'Auto' },
       { href: '/admin/contabilidad', label: 'Contabilidad y rentabilidad', icon: 'document' },
       { href: '/admin/remuneraciones', label: 'Remuneraciones', icon: 'briefcase' },
+      { href: '/admin/formulas', label: 'Fórmulas de cálculo', icon: 'settings', badge: 'Versionado' },
     ],
   },
   {
