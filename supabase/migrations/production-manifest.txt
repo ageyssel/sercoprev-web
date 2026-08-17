@@ -16,3 +16,4 @@ supabase/migrations/202607240018_commercial_site_cms.sql
 supabase/migrations/202607240019_document_ai_and_tax_folder.sql
 supabase/migrations/202608170020_operational_formulas_client_access.sql
 supabase/migrations/202608170021_formula_week_run_guard.sql
+supabase/migrations/202608170022_atomic_formula_publication.sql
