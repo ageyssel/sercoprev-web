@@ -120,6 +120,17 @@ class Parser {
     return token
   }
 
+  private currentOperator(allowed: string[]) {
+    const token = this.current()
+    return token.type === 'operator' && allowed.includes(token.value) ? token.value : null
+  }
+
+  private consumeOperator() {
+    const token = this.consume()
+    if (token.type !== 'operator') throw new Error('Se esperaba un operador.')
+    return token.value
+  }
+
   private withDepth<T>(callback: () => T): T {
     this.depth += 1
     if (this.depth > MAX_DEPTH) throw new Error('La fórmula tiene demasiados niveles de anidación.')
@@ -132,8 +143,9 @@ class Parser {
 
   private comparison(): number {
     let left = this.additive()
-    while (this.current().type === 'operator' && ['<', '<=', '>', '>=', '==', '!='].includes(this.current().value)) {
-      const operator = this.consume().value
+    let operator = this.currentOperator(['<', '<=', '>', '>=', '==', '!='])
+    while (operator) {
+      this.consumeOperator()
       const right = this.additive()
       left = operator === '<' ? Number(left < right)
         : operator === '<=' ? Number(left <= right)
@@ -141,37 +153,42 @@ class Parser {
             : operator === '>=' ? Number(left >= right)
               : operator === '==' ? Number(left === right)
                 : Number(left !== right)
+      operator = this.currentOperator(['<', '<=', '>', '>=', '==', '!='])
     }
     return left
   }
 
   private additive(): number {
     let value = this.multiplicative()
-    while (this.current().type === 'operator' && ['+', '-'].includes(this.current().value)) {
-      const operator = this.consume().value
+    let operator = this.currentOperator(['+', '-'])
+    while (operator) {
+      this.consumeOperator()
       const right = this.multiplicative()
       value = operator === '+' ? value + right : value - right
       finite(value)
+      operator = this.currentOperator(['+', '-'])
     }
     return value
   }
 
   private multiplicative(): number {
     let value = this.power()
-    while (this.current().type === 'operator' && ['*', '/', '%'].includes(this.current().value)) {
-      const operator = this.consume().value
+    let operator = this.currentOperator(['*', '/', '%'])
+    while (operator) {
+      this.consumeOperator()
       const right = this.power()
       if ((operator === '/' || operator === '%') && right === 0) throw new Error('La fórmula intentó dividir por cero.')
       value = operator === '*' ? value * right : operator === '/' ? value / right : value % right
       finite(value)
+      operator = this.currentOperator(['*', '/', '%'])
     }
     return value
   }
 
   private power(): number {
     let value = this.unary()
-    if (this.current().type === 'operator' && this.current().value === '^') {
-      this.consume()
+    if (this.currentOperator(['^']) === '^') {
+      this.consumeOperator()
       value = Math.pow(value, this.power())
       finite(value)
     }
@@ -179,8 +196,9 @@ class Parser {
   }
 
   private unary(): number {
-    if (this.current().type === 'operator' && ['+', '-'].includes(this.current().value)) {
-      const operator = this.consume().value
+    const operator = this.currentOperator(['+', '-'])
+    if (operator) {
+      this.consumeOperator()
       const value = this.unary()
       return operator === '-' ? -value : value
     }
@@ -241,10 +259,13 @@ class Parser {
       case 'MAX':
         if (args.length < 1) throw new Error('MAX requiere al menos un argumento.')
         return finite(Math.max(...args))
-      case 'ROUND':
+      case 'ROUND': {
         if (args.length < 1 || args.length > 2) throw new Error('ROUND recibe uno o dos argumentos.')
         if (args.length === 1) return Math.round(args[0])
-        return finite(Math.round(args[0] * 10 ** args[1]) / 10 ** args[1])
+        const decimals = Math.max(-12, Math.min(12, Math.trunc(args[1])))
+        const factor = 10 ** decimals
+        return finite(Math.round(args[0] * factor) / factor)
+      }
       case 'FLOOR':
         if (args.length !== 1) throw new Error('FLOOR recibe un argumento.')
         return Math.floor(args[0])
