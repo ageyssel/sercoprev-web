@@ -93,19 +93,19 @@ export async function guardarParametrosRemuneracionesTrazables(
     if (!period) return { status: 'error', message: 'Periodo inválido.' }
 
     const numericFields = {
-      uf: numberValue(formData.get('uf')),
-      utm: numberValue(formData.get('utm')),
-      ingreso_minimo: numberValue(formData.get('ingreso_minimo')),
-      tope_afp_uf: numberValue(formData.get('tope_afp_uf')),
-      tope_salud_uf: numberValue(formData.get('tope_salud_uf')),
-      tope_afc_uf: numberValue(formData.get('tope_afc_uf')),
-      tasa_salud: numberValue(formData.get('tasa_salud'), 0.07),
-      tasa_sis_empleador: numberValue(formData.get('tasa_sis_empleador')),
-      tasa_afc_trabajador_indefinido: numberValue(formData.get('tasa_afc_trabajador_indefinido'), 0.006),
-      tasa_afc_empleador_indefinido: numberValue(formData.get('tasa_afc_empleador_indefinido'), 0.024),
-      tasa_afc_empleador_plazo: numberValue(formData.get('tasa_afc_empleador_plazo'), 0.03),
+      uf: numberValue(formData.get('uf'), Number.NaN),
+      utm: numberValue(formData.get('utm'), Number.NaN),
+      ingreso_minimo: numberValue(formData.get('ingreso_minimo'), Number.NaN),
+      tope_afp_uf: numberValue(formData.get('tope_afp_uf'), Number.NaN),
+      tope_salud_uf: numberValue(formData.get('tope_salud_uf'), Number.NaN),
+      tope_afc_uf: numberValue(formData.get('tope_afc_uf'), Number.NaN),
+      tasa_salud: numberValue(formData.get('tasa_salud'), Number.NaN),
+      tasa_sis_empleador: numberValue(formData.get('tasa_sis_empleador'), Number.NaN),
+      tasa_afc_trabajador_indefinido: numberValue(formData.get('tasa_afc_trabajador_indefinido'), Number.NaN),
+      tasa_afc_empleador_indefinido: numberValue(formData.get('tasa_afc_empleador_indefinido'), Number.NaN),
+      tasa_afc_empleador_plazo: numberValue(formData.get('tasa_afc_empleador_plazo'), Number.NaN),
     }
-    if (Object.values(numericFields).some((value) => Number.isNaN(value) || value < 0)) return { status: 'error', message: 'Revise los parámetros numéricos.' }
+    if (Object.values(numericFields).some((value) => Number.isNaN(value) || value < 0)) return { status: 'error', message: 'Revise y complete todos los parámetros numéricos antes de guardar.' }
     if (numericFields.uf <= 0 || numericFields.utm <= 0 || numericFields.ingreso_minimo <= 0 || numericFields.tope_afp_uf <= 0 || numericFields.tope_salud_uf <= 0 || numericFields.tope_afc_uf <= 0) return { status: 'error', message: 'UF, UTM, ingreso mínimo y topes deben ser mayores que cero.' }
     if ([numericFields.tasa_salud, numericFields.tasa_sis_empleador, numericFields.tasa_afc_trabajador_indefinido, numericFields.tasa_afc_empleador_indefinido, numericFields.tasa_afc_empleador_plazo].some((rate) => rate > 1)) return { status: 'error', message: 'Las tasas deben registrarse como decimales entre 0 y 1.' }
 
