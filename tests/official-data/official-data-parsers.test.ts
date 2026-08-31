@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { parseBancoCentralDailyHtml, parsePreviredHtml } from '@/lib/official-data-parsers'
+import { parseDecimalRateInput, percentageToDecimalRate } from '@/lib/rate-decimal'
 
 const CURRENT_PERIOD = 'Para cotizaciones a pagar en septiembre 2026 (remuneraciones agosto 2026)'
 
@@ -41,6 +42,24 @@ test('PREVIRED mantiene compatibilidad con Tasa SIS y AFP de cuatro porcentajes'
   assertRate(parsedValue(result, 'TASA_SIS_EMPLEADOR')?.value, 0.0162)
   assert.equal(parsedValue(result, 'TASA_AFP_CAPITAL')?.metadata?.percentage_columns_found, 4)
   assertRate(parsedValue(result, 'TASA_AFP_CAPITAL')?.value, 0.1144)
+})
+
+test('PREVIRED convierte porcentajes a decimales exactos con seis posiciones de precisión', () => {
+  const result = parsePreviredHtml(`
+    ${CURRENT_PERIOD}
+    Provida 11,45% 0,10% 11,55%
+    Uno 10,46% 0,10% 10,56%
+  `)
+
+  assert.equal(percentageToDecimalRate(11.45), 0.1145)
+  assert.equal(parsedValue(result, 'TASA_AFP_PROVIDA')?.value, 0.1145)
+  assert.equal(parsedValue(result, 'TASA_AFP_UNO')?.value, 0.1046)
+})
+
+test('el parser de tasas del formulario conserva decimales de tres cifras', () => {
+  assert.equal(parseDecimalRateInput('0.006'), 0.006)
+  assert.equal(parseDecimalRateInput('0.024'), 0.024)
+  assert.equal(parseDecimalRateInput('0,030'), 0.03)
 })
 
 test('PREVIRED recolecta errores por campo sin perder los valores que sí pudo leer', () => {

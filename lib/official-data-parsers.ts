@@ -1,3 +1,5 @@
+import { percentageToDecimalRate } from '@/lib/rate-decimal'
+
 export type OfficialDataUnit = 'CLP' | 'UF' | 'UTM' | 'PORCENTAJE' | 'INDICE' | 'TASA'
 
 export type ParsedOfficialValue = {
@@ -107,7 +109,7 @@ function firstNumber(text: string, patterns: RegExp[], errorCode: string) {
 }
 
 function firstPercent(text: string, patterns: RegExp[], errorCode: string) {
-  return firstNumber(text, patterns, errorCode) / 100
+  return percentageToDecimalRate(firstNumber(text, patterns, errorCode))
 }
 
 function addValue(values: ParsedOfficialValue[], code: string, value: number, unit: OfficialDataUnit, metadata?: Record<string, unknown>) {
@@ -168,8 +170,8 @@ export function parsePreviredHtml(html: string, now = new Date()): ParsedSourceR
   const indefiniteMatch = text.match(/Plazo\s+Indefinido\s*[:\-–—]?\s*([\d.,]+)\s*%\s*(?:R\s*\.?\s*I\s*\.?)?\s*([\d.,]+)\s*%\s*(?:R\s*\.?\s*I\s*\.?)?/i)
   if (indefiniteMatch?.[1] && indefiniteMatch[2]) {
     try {
-      addValue(values, 'TASA_AFC_EMPLEADOR_INDEFINIDO', parseChileanOfficialNumber(indefiniteMatch[1]) / 100, 'PORCENTAJE')
-      addValue(values, 'TASA_AFC_TRABAJADOR_INDEFINIDO', parseChileanOfficialNumber(indefiniteMatch[2]) / 100, 'PORCENTAJE')
+      addValue(values, 'TASA_AFC_EMPLEADOR_INDEFINIDO', percentageToDecimalRate(parseChileanOfficialNumber(indefiniteMatch[1])), 'PORCENTAJE')
+      addValue(values, 'TASA_AFC_TRABAJADOR_INDEFINIDO', percentageToDecimalRate(parseChileanOfficialNumber(indefiniteMatch[2])), 'PORCENTAJE')
     } catch (error) {
       const message = errorMessage(error, 'PREVIRED_AFC_INDEFINITE_RATES_INVALID')
       errors.TASA_AFC_EMPLEADOR_INDEFINIDO = message
@@ -195,9 +197,9 @@ export function parsePreviredHtml(html: string, now = new Date()): ParsedSourceR
 
     try {
       const percentageColumnsFound = rowMatch[4] ? 4 : 3
-      const workerRate = parseChileanOfficialNumber(rowMatch[1]) / 100
-      const employerIndividualRate = parseChileanOfficialNumber(rowMatch[2]) / 100
-      const totalRate = parseChileanOfficialNumber(rowMatch[3]) / 100
+      const workerRate = percentageToDecimalRate(parseChileanOfficialNumber(rowMatch[1]))
+      const employerIndividualRate = percentageToDecimalRate(parseChileanOfficialNumber(rowMatch[2]))
+      const totalRate = percentageToDecimalRate(parseChileanOfficialNumber(rowMatch[3]))
       addValue(values, code, workerRate, 'PORCENTAJE', {
         afp: name,
         component: 'trabajador_total',
@@ -217,7 +219,7 @@ export function parsePreviredHtml(html: string, now = new Date()): ParsedSourceR
   const socialInsuranceMatch = text.match(/Seguro\s+Social\s+Expectativa\s+de\s+Vida\s*[:\-–—]?\s*([\d.,]+)\s*%/i)
   if (socialInsuranceMatch?.[1]) {
     try {
-      addValue(values, 'TASA_SEGURO_SOCIAL_EMPLEADOR', parseChileanOfficialNumber(socialInsuranceMatch[1]) / 100, 'PORCENTAJE')
+      addValue(values, 'TASA_SEGURO_SOCIAL_EMPLEADOR', percentageToDecimalRate(parseChileanOfficialNumber(socialInsuranceMatch[1])), 'PORCENTAJE')
     } catch {
       // Es un valor complementario: no invalida los campos requeridos.
     }
@@ -226,8 +228,8 @@ export function parsePreviredHtml(html: string, now = new Date()): ParsedSourceR
   const ccafFonasaMatch = text.match(/CCAF\s*[:\-–—]?\s*([\d.,]+)\s*%\s*(?:R\s*\.?\s*I\s*\.?)?\s+FONASA\s*[:\-–—]?\s*([\d.,]+)\s*%\s*(?:R\s*\.?\s*I\s*\.?)?/i)
   if (ccafFonasaMatch?.[1] && ccafFonasaMatch[2]) {
     try {
-      addValue(values, 'TASA_CCAF_SALUD', parseChileanOfficialNumber(ccafFonasaMatch[1]) / 100, 'PORCENTAJE')
-      addValue(values, 'TASA_FONASA_CON_CCAF', parseChileanOfficialNumber(ccafFonasaMatch[2]) / 100, 'PORCENTAJE')
+      addValue(values, 'TASA_CCAF_SALUD', percentageToDecimalRate(parseChileanOfficialNumber(ccafFonasaMatch[1])), 'PORCENTAJE')
+      addValue(values, 'TASA_FONASA_CON_CCAF', percentageToDecimalRate(parseChileanOfficialNumber(ccafFonasaMatch[2])), 'PORCENTAJE')
     } catch {
       // Complementario.
     }

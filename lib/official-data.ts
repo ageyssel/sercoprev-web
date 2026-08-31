@@ -8,6 +8,7 @@ import {
   type OfficialDataUnit,
   type ParsedOfficialValue,
 } from '@/lib/official-data-parsers'
+import { roundRateDecimal } from '@/lib/rate-decimal'
 import { createAdminClient } from '@/utils/supabase/admin'
 
 const PREVIRED_URL = 'https://www.previred.com/indicadores-previsionales/'
@@ -115,6 +116,18 @@ async function saveOfficialRows(rows: OfficialDataRow[]) {
   if (error) throw error
 }
 
+function normalizedOfficialValue(item: ParsedOfficialValue) {
+  const isRate = item.unit === 'PORCENTAJE' || item.unit === 'TASA'
+  const metadata = item.metadata ? { ...item.metadata } : undefined
+  if (metadata && typeof metadata.published_total_rate === 'number') {
+    metadata.published_total_rate = roundRateDecimal(metadata.published_total_rate)
+  }
+  return {
+    value: isRate ? roundRateDecimal(item.value) : item.value,
+    metadata,
+  }
+}
+
 function buildRows(
   source: OfficialDataSource,
   sourceName: string,
@@ -124,18 +137,21 @@ function buildRows(
   values: ParsedOfficialValue[],
   commonMetadata: Record<string, unknown> = {},
 ): OfficialDataRow[] {
-  return values.map((item) => ({
-    fuente_codigo: source,
-    codigo: item.code,
-    periodo: period,
-    valor: item.value,
-    unidad: item.unit,
-    fuente_nombre: sourceName,
-    fuente_url: sourceUrl,
-    obtenido_at: obtainedAt,
-    metadata: { ...commonMetadata, ...(item.metadata ?? {}) },
-    updated_at: obtainedAt,
-  }))
+  return values.map((item) => {
+    const normalized = normalizedOfficialValue(item)
+    return {
+      fuente_codigo: source,
+      codigo: item.code,
+      periodo: period,
+      valor: normalized.value,
+      unidad: item.unit,
+      fuente_nombre: sourceName,
+      fuente_url: sourceUrl,
+      obtenido_at: obtainedAt,
+      metadata: { ...commonMetadata, ...(normalized.metadata ?? {}) },
+      updated_at: obtainedAt,
+    }
+  })
 }
 
 async function collectPreviredCurrent() {
@@ -187,10 +203,9 @@ function resolvedValue(
   historical: Map<string, HistoricalOfficialDataRow>,
 ) {
   const currentRow = current.get(code)
-  if (currentRow) return Number(currentRow.valor)
-  const historicalRow = historical.get(code)
-  if (historicalRow) return Number(historicalRow.valor)
-  return undefined
+  const rawValue = currentRow ? Number(currentRow.valor) : historical.has(code) ? Number(historical.get(code)?.valor) : undefined
+  if (rawValue === undefined) return undefined
+  return code.startsWith('TASA_') ? roundRateDecimal(rawValue) : rawValue
 }
 
 export async function syncPreviredCurrent() {
