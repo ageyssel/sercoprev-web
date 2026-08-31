@@ -507,7 +507,6 @@ export async function calcularPeriodoConFormulas(formData: FormData): Promise<vo
       const { data: payslip, error: payslipError } = await adminClient.from('liquidaciones').upsert({
         periodo_id: periodoId,
         trabajador_id: worker.id,
-        contrato_id: contract.id,
         sueldo_base: result.salaryBasePaid,
         total_imponible: result.taxableEarnings,
         total_tributable: result.incomeTaxableEarnings,
