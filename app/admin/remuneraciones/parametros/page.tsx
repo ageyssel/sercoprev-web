@@ -49,11 +49,15 @@ export default async function PayrollParametersPage({ searchParams }: { searchPa
 
   if (payrollResult.status === 'fulfilled') automaticPayroll = payrollResult.value
   else {
-    console.error('No fue posible obtener parámetros previsionales automáticos:', payrollResult.reason)
-    payrollSourceError = payrollResult.reason instanceof Error && payrollResult.reason.message.includes('PERIOD_NOT_AVAILABLE')
-      ? 'PREVIRED aún no publica o no conserva en caché los indicadores del periodo seleccionado.'
-      : 'No fue posible consultar los indicadores previsionales. Los datos específicos pueden completarse manualmente, pero los valores generales deben verificarse antes de guardar.'
+    console.error('No fue posible obtener parámetros previsionales resilientes:', payrollResult.reason)
+    payrollSourceError = 'No fue posible consultar ni reconstruir los indicadores previsionales. Complete y verifique profesionalmente los campos antes de guardar.'
   }
+
+  const payrollStatusLabel = automaticPayroll?.completeOfficialToday
+    ? `PREVIRED: ${automaticPayroll.obtainedCodes.length} campos obtenidos hoy`
+    : automaticPayroll
+      ? `PREVIRED degradado: ${automaticPayroll.obtainedCodes.length} obtenidos hoy · ${automaticPayroll.degradedCodes.length} históricos · ${automaticPayroll.unavailableCodes.length} no disponibles`
+      : null
 
   const defaults: OfficialPayrollParameterDefaults = {
     period: selectedDate.slice(0, 7),
@@ -77,41 +81,71 @@ export default async function PayrollParametersPage({ searchParams }: { searchPa
     payrollSourceName: automaticPayroll?.sourceName,
     payrollSourceUrl: automaticPayroll?.sourceUrl,
     payrollObtainedAt: automaticPayroll?.obtainedAt,
-    automaticPayrollAvailable: Boolean(automaticPayroll),
+    automaticPayrollAvailable: Boolean(automaticPayroll?.hasUsableValues),
+    automaticPayrollComplete: Boolean(automaticPayroll?.completeOfficialToday),
     trackedAdditionalValues: automaticPayroll?.trackedAdditionalValues,
+    payrollFieldStates: automaticPayroll?.fieldStates,
     sourceLabel: [
       indicators ? `UF y UTM: SII, consulta ${selectedDate}` : null,
-      automaticPayroll ? `Parámetros previsionales: ${automaticPayroll.sourceName}, periodo ${automaticPayroll.period.slice(0, 7)}` : null,
+      automaticPayroll?.completeOfficialToday
+        ? `Parámetros previsionales: ${automaticPayroll.sourceName}, obtenidos desde fuente oficial para ${automaticPayroll.period.slice(0, 7)}`
+        : automaticPayroll?.hasUsableValues
+          ? `Parámetros previsionales: consulta PREVIRED degradada; revisar la procedencia indicada en cada campo antes de guardar`
+          : null,
       indicators ? 'Tramos mensuales de Impuesto Único derivados desde la UTM oficial' : null,
     ].filter(Boolean).join('. '),
   }
 
   return (
     <div className="mx-auto max-w-[1350px]">
-      <ModulePageHeader eyebrow="Remuneraciones · Cumplimiento" title="Parámetros legales" description="La plataforma consulta, versiona y precarga automáticamente valores generales publicados por SII y PREVIRED. Los datos particulares de cada empresa o trabajador permanecen bajo control manual." help="Los parámetros son versionados por mes. Un periodo de remuneraciones sólo puede abrirse cuando existe una configuración para ese mismo mes." actions={<CompanySelector companies={companies} selectedId={selected?.id} />} />
+      <ModulePageHeader eyebrow="Remuneraciones · Cumplimiento" title="Parámetros legales" description="La plataforma consulta, versiona y precarga valores generales publicados por SII y PREVIRED. Cada parámetro previsional informa si fue obtenido hoy, recuperado del historial de forma degradada o no está disponible; la aprobación antes de guardar siempre es humana." help="Los parámetros son versionados por mes. Un periodo de remuneraciones sólo puede abrirse cuando existe una configuración para ese mismo mes." actions={<CompanySelector companies={companies} selectedId={selected?.id} />} />
 
       <section className="mt-7 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
         <form method="get" className="flex flex-col gap-4 sm:flex-row sm:items-end">
           <input type="hidden" name="empresa" value={selected?.id ?? ''} />
-          <label className="grid flex-1 gap-2 text-sm font-bold text-slate-700"><span className="inline-flex items-start">Fecha de cálculo <InfoTip>La UF es diaria. La UTM y los demás parámetros se aplican al mes de esta fecha. La plataforma usa primero el historial almacenado y sincroniza la publicación vigente cuando falta.</InfoTip></span><input type="date" name="fecha" required defaultValue={selectedDate} className="h-11 rounded-xl border border-slate-300 bg-white px-3" /></label>
+          <label className="grid flex-1 gap-2 text-sm font-bold text-slate-700"><span className="inline-flex items-start">Fecha de cálculo <InfoTip>La UF es diaria. La UTM y los demás parámetros se aplican al mes de esta fecha. PREVIRED se consulta por campo; si un dato falla, el historial se usa únicamente como referencia degradada y nunca como valor actual.</InfoTip></span><input type="date" name="fecha" required defaultValue={selectedDate} className="h-11 rounded-xl border border-slate-300 bg-white px-3" /></label>
           <button className="h-11 rounded-xl bg-[#134b78] px-5 text-sm font-black text-white">Consultar y sincronizar</button>
         </form>
 
         {indicatorError && <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-800">{indicatorError}</p>}
-        {payrollSourceError && <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-800">{payrollSourceError}</p>}
+        {payrollSourceError && <p className="mt-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-800">{payrollSourceError}</p>}
         <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {indicators && <IndicatorCard type="UF" value={indicators.uf.valor} reference={indicators.uf.fecha_referencia} source={indicators.uf.fuente_url} sourceName="SII" explanation="Unidad de Fomento oficial para el día exacto seleccionado. Se usa para convertir topes y planes expresados en UF a pesos." />}
           {indicators && <IndicatorCard type="UTM" value={indicators.utm.valor} reference={indicators.utm.fecha_referencia.slice(0, 7)} source={indicators.utm.fuente_url} sourceName="SII" explanation="Unidad Tributaria Mensual oficial del mes seleccionado. Además sirve para construir los ocho tramos mensuales del Impuesto Único." />}
-          {automaticPayroll && <article className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5"><div className="flex items-start justify-between"><div><p className="text-xs font-black uppercase tracking-wide text-emerald-700">Previsión sincronizada</p><p className="mt-2 text-xl font-black text-[#0f2438]">{automaticPayroll.period.slice(0, 7)}</p><p className="mt-1 text-xs text-slate-500">{automaticPayroll.fromCache ? 'Historial validado' : 'Actualizado desde la fuente'}</p></div><InfoTip>Incluye ingreso mínimo general, topes imponibles, salud, SIS, AFC y tasas totales AFP. También se guardan otros valores generales publicados para futuras reglas de cálculo.</InfoTip></div><a href={automaticPayroll.sourceUrl} target="_blank" rel="noreferrer" className="mt-4 inline-flex items-center gap-2 text-xs font-black text-emerald-700 hover:underline"><AppIcon name="arrow-right" className="h-4 w-4" />Abrir fuente PREVIRED</a></article>}
+          {automaticPayroll && <PayrollSourceCard payroll={automaticPayroll} statusLabel={payrollStatusLabel ?? ''} />}
         </div>
       </section>
 
       {!selected ? <Empty /> : <>
-        <details open className="mt-7 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6"><summary className="cursor-pointer list-none text-xl font-black text-[#0f2438] [&::-webkit-details-marker]:hidden">Configuración del periodo</summary><p className="mt-2 text-sm leading-6 text-slate-500">Los parámetros generales disponibles se precargan automáticamente. Revise únicamente excepciones y antecedentes específicos antes de guardar.</p><div className="mt-6 border-t border-slate-200 pt-6"><OfficialPayrollParametersForm key={`${selected.id}-${selectedDate}`} companyId={selected.id} defaults={defaults} /></div></details>
+        <details open className="mt-7 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6"><summary className="cursor-pointer list-none text-xl font-black text-[#0f2438] [&::-webkit-details-marker]:hidden">Configuración del periodo</summary><p className="mt-2 text-sm leading-6 text-slate-500">Los parámetros disponibles se precargan con su estado de procedencia. Revise especialmente cualquier valor histórico degradado o no disponible antes de guardar.</p><div className="mt-6 border-t border-slate-200 pt-6"><OfficialPayrollParametersForm key={`${selected.id}-${selectedDate}`} companyId={selected.id} defaults={defaults} /></div></details>
 
         <section className="mt-7 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6"><h2 className="text-xl font-black text-[#0f2438]">Historial de parámetros</h2><p className="mt-1 text-sm text-slate-500">Configuraciones específicas de empresa y globales disponibles para los últimos periodos.</p>{error ? <p className="mt-4 text-sm font-bold text-red-700">No fue posible cargar el historial.</p> : <div className="mt-5 grid gap-3">{((parameterRows ?? []) as Parameter[]).map((item) => <article key={item.id} className="flex flex-col gap-3 rounded-2xl border border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-black text-[#17324a]">{item.periodo.slice(0, 7)} · UF {formatCurrency(item.uf)} · UTM {formatCurrency(item.utm)}</p><p className="mt-1 text-xs text-slate-500">Ingreso mínimo {formatCurrency(item.ingreso_minimo)} · actualizado {formatDate(item.updated_at, { dateStyle: 'medium', timeStyle: 'short' })}</p><p className="mt-1 text-xs text-slate-400">{item.fuente || 'Fuente general no registrada'}</p></div><span className={`rounded-full px-3 py-1.5 text-xs font-black ${item.indicadores_verificados_at && item.parametros_automaticos_at ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800'}`}>{item.indicadores_verificados_at && item.parametros_automaticos_at ? 'Fuentes automáticas trazadas' : 'Revisar trazabilidad'}</span></article>)}</div>}</section>
       </>}
     </div>
+  )
+}
+
+function PayrollSourceCard({ payroll, statusLabel }: { payroll: Awaited<ReturnType<typeof getAutomaticPayrollDefaults>>; statusLabel: string }) {
+  const className = payroll.completeOfficialToday
+    ? 'border-emerald-200 bg-emerald-50'
+    : payroll.hasUsableValues
+      ? 'border-amber-200 bg-amber-50'
+      : 'border-red-200 bg-red-50'
+  const accent = payroll.completeOfficialToday ? 'text-emerald-700' : payroll.hasUsableValues ? 'text-amber-800' : 'text-red-700'
+
+  return (
+    <article className={`rounded-2xl border p-5 ${className}`}>
+      <div className="flex items-start justify-between">
+        <div>
+          <p className={`text-xs font-black uppercase tracking-wide ${accent}`}>{payroll.completeOfficialToday ? 'Previsión oficial obtenida hoy' : payroll.hasUsableValues ? 'Previsión degradada' : 'Previsión no disponible'}</p>
+          <p className="mt-2 text-xl font-black text-[#0f2438]">{payroll.period.slice(0, 7)}</p>
+          <p className="mt-1 text-xs text-slate-600">{statusLabel}</p>
+          {!payroll.completeOfficialToday && payroll.degradedCodes.length > 0 && <p className="mt-2 text-xs font-bold text-amber-800">Los valores históricos son referencias no verificadas para este período.</p>}
+        </div>
+        <InfoTip>El estado se calcula por campo. Un fallo en SIS, una AFP u otro indicador no elimina los valores que sí pudieron obtenerse desde la fuente.</InfoTip>
+      </div>
+      <a href={payroll.sourceUrl} target="_blank" rel="noreferrer" className={`mt-4 inline-flex items-center gap-2 text-xs font-black hover:underline ${accent}`}><AppIcon name="arrow-right" className="h-4 w-4" />Abrir fuente PREVIRED</a>
+    </article>
   )
 }
 
