@@ -49,9 +49,8 @@ export type OfficialPayrollParameterDefaults = {
   payrollFieldStates?: Record<string, PayrollFieldState>
 }
 
-function numberDefault(value: number | undefined, fallback?: number) {
-  const resolved = value ?? fallback
-  return resolved === undefined || !Number.isFinite(resolved) ? undefined : String(resolved)
+function numberDefault(value: number | undefined) {
+  return value === undefined || !Number.isFinite(value) ? undefined : String(value)
 }
 
 function sourceStateLabel(state: PayrollFieldState) {
@@ -103,11 +102,11 @@ export function OfficialPayrollParametersForm({ companyId, defaults }: { company
           <Field label="Tope AFP (UF)" name="tope_afp_uf" inputMode="decimal" required defaultValue={numberDefault(defaults.pensionCapUf)} sourceState={fieldState('TOPE_IMPONIBLE_AFP_UF')} help="Tope imponible previsional expresado en UF. Se convierte a pesos usando la UF registrada." />
           <Field label="Tope salud (UF)" name="tope_salud_uf" inputMode="decimal" required defaultValue={numberDefault(defaults.healthCapUf)} sourceState={fieldState('TOPE_IMPONIBLE_SALUD_UF')} help="Tope imponible general usado para la cotización legal de salud." />
           <Field label="Tope AFC (UF)" name="tope_afc_uf" inputMode="decimal" required defaultValue={numberDefault(defaults.unemploymentCapUf)} sourceState={fieldState('TOPE_IMPONIBLE_AFC_UF')} help="Tope imponible aplicable al Seguro de Cesantía." />
-          <Field label="Tasa salud" name="tasa_salud" inputMode="decimal" required defaultValue={numberDefault(defaults.healthRate, 0.07)} sourceState={fieldState('TASA_SALUD_LEGAL')} help="Tasa legal general de salud como decimal. Los planes ISAPRE específicos de cada trabajador se mantienen en su ficha." />
+          <Field label="Tasa salud" name="tasa_salud" inputMode="decimal" required defaultValue={numberDefault(defaults.healthRate)} sourceState={fieldState('TASA_SALUD_LEGAL')} help="Tasa legal general de salud como decimal. Los planes ISAPRE específicos de cada trabajador se mantienen en su ficha." />
           <Field label="Tasa SIS empleador" name="tasa_sis_empleador" inputMode="decimal" required defaultValue={numberDefault(defaults.sisEmployerRate)} sourceState={fieldState('TASA_SIS_EMPLEADOR')} help="Tasa de Seguro de Invalidez y Sobrevivencia publicada para el periodo. La fuente puede cambiar de presentación sin alterar la obligación de revisión humana." />
-          <Field label="AFC trabajador indefinido" name="tasa_afc_trabajador_indefinido" inputMode="decimal" required defaultValue={numberDefault(defaults.unemploymentWorkerIndefiniteRate, 0.006)} sourceState={fieldState('TASA_AFC_TRABAJADOR_INDEFINIDO')} help="Tasa de cargo del trabajador con contrato indefinido, expresada como decimal." />
-          <Field label="AFC empleador indefinido" name="tasa_afc_empleador_indefinido" inputMode="decimal" required defaultValue={numberDefault(defaults.unemploymentEmployerIndefiniteRate, 0.024)} sourceState={fieldState('TASA_AFC_EMPLEADOR_INDEFINIDO')} help="Tasa de cargo del empleador con contrato indefinido." />
-          <Field label="AFC empleador plazo" name="tasa_afc_empleador_plazo" inputMode="decimal" required defaultValue={numberDefault(defaults.unemploymentEmployerFixedRate, 0.03)} sourceState={fieldState('TASA_AFC_EMPLEADOR_PLAZO')} help="Tasa de cargo del empleador para contratos a plazo u obra." />
+          <Field label="AFC trabajador indefinido" name="tasa_afc_trabajador_indefinido" inputMode="decimal" required defaultValue={numberDefault(defaults.unemploymentWorkerIndefiniteRate)} sourceState={fieldState('TASA_AFC_TRABAJADOR_INDEFINIDO')} help="Tasa de cargo del trabajador con contrato indefinido, expresada como decimal." />
+          <Field label="AFC empleador indefinido" name="tasa_afc_empleador_indefinido" inputMode="decimal" required defaultValue={numberDefault(defaults.unemploymentEmployerIndefiniteRate)} sourceState={fieldState('TASA_AFC_EMPLEADOR_INDEFINIDO')} help="Tasa de cargo del empleador con contrato indefinido." />
+          <Field label="AFC empleador plazo" name="tasa_afc_empleador_plazo" inputMode="decimal" required defaultValue={numberDefault(defaults.unemploymentEmployerFixedRate)} sourceState={fieldState('TASA_AFC_EMPLEADOR_PLAZO')} help="Tasa de cargo del empleador para contratos a plazo u obra." />
         </div>
       </section>
 
@@ -133,7 +132,7 @@ export function OfficialPayrollParametersForm({ companyId, defaults }: { company
       ) : defaults.automaticPayrollAvailable ? (
         <p className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs font-semibold leading-5 text-amber-800">La consulta previsional está degradada. Algunos campos pueden estar precargados con el último valor histórico conocido y se identifican individualmente como “Histórico · no verificado para este período”. Deben ser verificados por una persona antes de guardar; ningún valor histórico se considera actual automáticamente.</p>
       ) : (
-        <p className="rounded-xl border border-red-200 bg-red-50 p-4 text-xs font-semibold leading-5 text-red-800">No hay valores previsionales automáticos utilizables para este periodo. Complete y verifique profesionalmente cada campo antes de guardar.</p>
+        <p className="rounded-xl border border-red-200 bg-red-50 p-4 text-xs font-semibold leading-5 text-red-800">No hay valores previsionales automáticos utilizables para este periodo. Los campos sin fuente permanecen vacíos: complételos y verifíquelos profesionalmente antes de guardar.</p>
       )}
 
       {state.message && <p role="status" className={`rounded-xl border px-4 py-3 text-sm font-bold ${state.status === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-red-200 bg-red-50 text-red-700'}`}>{state.message}</p>}
