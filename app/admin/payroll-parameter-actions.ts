@@ -5,6 +5,7 @@ import { requireAdmin } from '@/utils/supabase/require-admin'
 import type { PayrollActionState } from '@/app/admin/payroll-actions'
 import type { PayrollTaxBracket } from '@/lib/payroll'
 import { getAutomaticPayrollDefaults } from '@/lib/official-data'
+import { parseDecimalRateInput } from '@/lib/rate-decimal'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{2}[0-9a-f]-[0-9a-f]{12}$/i
 const AFP_FIELDS = [
@@ -15,6 +16,13 @@ const AFP_FIELDS = [
   ['PlanVital', 'afp_planvital'],
   ['Provida', 'afp_provida'],
   ['Uno', 'afp_uno'],
+] as const
+const RATE_FIELDS = [
+  ['tasa_salud', 'Tasa salud'],
+  ['tasa_sis_empleador', 'Tasa SIS empleador'],
+  ['tasa_afc_trabajador_indefinido', 'AFC trabajador indefinido'],
+  ['tasa_afc_empleador_indefinido', 'AFC empleador indefinido'],
+  ['tasa_afc_empleador_plazo', 'AFC empleador plazo'],
 ] as const
 
 function clean(value: unknown, maxLength: number) {
@@ -45,13 +53,24 @@ function dateValue(value: unknown) {
   return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : null
 }
 
+function rateValidationMessage(label: string, rawValue: unknown, rate: number, requirePositive = false) {
+  const submitted = clean(rawValue, 60) || '(vacío)'
+  if (!Number.isFinite(rate)) return `${label}: "${submitted}" no es un decimal válido.`
+  if (rate < 0 || rate > 1) return `${label}: el valor ${submitted} está fuera del rango permitido entre 0 y 1.`
+  if (requirePositive && rate <= 0) return `${label}: el valor ${submitted} debe ser mayor que 0 y menor o igual que 1.`
+  return null
+}
+
 function parseAfpRates(formData: FormData) {
   const rates: Record<string, number> = {}
   for (const [name, field] of AFP_FIELDS) {
-    const rate = numberValue(formData.get(field), Number.NaN)
-    if (Number.isFinite(rate) && rate > 0) rates[name] = rate
+    const rawValue = formData.get(field)
+    const rate = parseDecimalRateInput(rawValue)
+    const validationError = rateValidationMessage(`Tasa AFP ${name}`, rawValue, rate, true)
+    if (validationError) return { rates, error: validationError }
+    rates[name] = rate
   }
-  return rates
+  return { rates, error: null }
 }
 
 function parseTaxBrackets(formData: FormData) {
@@ -59,7 +78,7 @@ function parseTaxBrackets(formData: FormData) {
   for (let index = 0; index < 8; index += 1) {
     const from = numberValue(formData.get(`tax_from_${index}`), Number.NaN)
     const to = nullableNumber(formData.get(`tax_to_${index}`))
-    const factor = numberValue(formData.get(`tax_factor_${index}`), Number.NaN)
+    const factor = parseDecimalRateInput(formData.get(`tax_factor_${index}`))
     const rebate = numberValue(formData.get(`tax_rebate_${index}`), Number.NaN)
     if ([from, factor, rebate].some(Number.isNaN) || (to !== null && Number.isNaN(to))) continue
     brackets.push({ from, to, factor, rebate })
@@ -99,18 +118,24 @@ export async function guardarParametrosRemuneracionesTrazables(
       tope_afp_uf: numberValue(formData.get('tope_afp_uf'), Number.NaN),
       tope_salud_uf: numberValue(formData.get('tope_salud_uf'), Number.NaN),
       tope_afc_uf: numberValue(formData.get('tope_afc_uf'), Number.NaN),
-      tasa_salud: numberValue(formData.get('tasa_salud'), Number.NaN),
-      tasa_sis_empleador: numberValue(formData.get('tasa_sis_empleador'), Number.NaN),
-      tasa_afc_trabajador_indefinido: numberValue(formData.get('tasa_afc_trabajador_indefinido'), Number.NaN),
-      tasa_afc_empleador_indefinido: numberValue(formData.get('tasa_afc_empleador_indefinido'), Number.NaN),
-      tasa_afc_empleador_plazo: numberValue(formData.get('tasa_afc_empleador_plazo'), Number.NaN),
+      tasa_salud: parseDecimalRateInput(formData.get('tasa_salud')),
+      tasa_sis_empleador: parseDecimalRateInput(formData.get('tasa_sis_empleador')),
+      tasa_afc_trabajador_indefinido: parseDecimalRateInput(formData.get('tasa_afc_trabajador_indefinido')),
+      tasa_afc_empleador_indefinido: parseDecimalRateInput(formData.get('tasa_afc_empleador_indefinido')),
+      tasa_afc_empleador_plazo: parseDecimalRateInput(formData.get('tasa_afc_empleador_plazo')),
     }
-    if (Object.values(numericFields).some((value) => Number.isNaN(value) || value < 0)) return { status: 'error', message: 'Revise y complete todos los parámetros numéricos antes de guardar.' }
+    const nonRateValues = [numericFields.uf, numericFields.utm, numericFields.ingreso_minimo, numericFields.tope_afp_uf, numericFields.tope_salud_uf, numericFields.tope_afc_uf]
+    if (nonRateValues.some((value) => Number.isNaN(value) || value < 0)) return { status: 'error', message: 'Revise y complete todos los parámetros numéricos antes de guardar.' }
     if (numericFields.uf <= 0 || numericFields.utm <= 0 || numericFields.ingreso_minimo <= 0 || numericFields.tope_afp_uf <= 0 || numericFields.tope_salud_uf <= 0 || numericFields.tope_afc_uf <= 0) return { status: 'error', message: 'UF, UTM, ingreso mínimo y topes deben ser mayores que cero.' }
-    if ([numericFields.tasa_salud, numericFields.tasa_sis_empleador, numericFields.tasa_afc_trabajador_indefinido, numericFields.tasa_afc_empleador_indefinido, numericFields.tasa_afc_empleador_plazo].some((rate) => rate > 1)) return { status: 'error', message: 'Las tasas deben registrarse como decimales entre 0 y 1.' }
 
-    const afpRates = parseAfpRates(formData)
-    if (Object.keys(afpRates).length !== AFP_FIELDS.length || Object.values(afpRates).some((rate) => rate > 1)) return { status: 'error', message: 'Complete todas las tasas AFP como decimales válidos.' }
+    for (const [field, label] of RATE_FIELDS) {
+      const validationError = rateValidationMessage(label, formData.get(field), numericFields[field])
+      if (validationError) return { status: 'error', message: validationError }
+    }
+
+    const afpResult = parseAfpRates(formData)
+    if (afpResult.error) return { status: 'error', message: afpResult.error }
+    const afpRates = afpResult.rates
     const taxBrackets = parseTaxBrackets(formData)
     if (!validTaxBrackets(taxBrackets)) return { status: 'error', message: 'Los ocho tramos mensuales de Impuesto Único están incompletos o son inválidos.' }
 
