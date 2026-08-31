@@ -146,7 +146,7 @@ export async function guardarParametrosRemuneracionesTrazables(
 
     const manualOverrides: string[] = []
     if (official) {
-      const comparisons: Array<[string, number, number]> = [
+      const comparisons: Array<[string, number, number | undefined]> = [
         ['ingreso_minimo', numericFields.ingreso_minimo, official.incomeMinimum],
         ['tope_afp_uf', numericFields.tope_afp_uf, official.pensionCapUf],
         ['tope_salud_uf', numericFields.tope_salud_uf, official.healthCapUf],
@@ -154,18 +154,29 @@ export async function guardarParametrosRemuneracionesTrazables(
         ['tasa_salud', numericFields.tasa_salud, official.healthRate],
         ['tasa_sis_empleador', numericFields.tasa_sis_empleador, official.sisEmployerRate],
         ['tasa_afc_trabajador_indefinido', numericFields.tasa_afc_trabajador_indefinido, official.unemploymentWorkerIndefiniteRate],
-        ['tasa_afc_empleador_indefinido', numericFields.tasa_afc_empleador_indefinido, official.unemploymentEmployerIndefiniteRate],
+        ['tasa_afc_empleador_indefinido', numericFields.tasa_afc_empleador_indefiniteRate],
         ['tasa_afc_empleador_plazo', numericFields.tasa_afc_empleador_plazo, official.unemploymentEmployerFixedRate],
       ]
-      for (const [field, submitted, expected] of comparisons) if (differs(submitted, expected)) manualOverrides.push(field)
-      for (const [name] of AFP_FIELDS) if (official.afpRates[name] !== undefined && differs(afpRates[name], official.afpRates[name])) manualOverrides.push(`tasa_afp_${name}`)
+      for (const [field, submitted, expected] of comparisons) {
+        if (expected !== undefined && Number.isFinite(expected) && differs(submitted, expected)) manualOverrides.push(field)
+      }
+      for (const [name] of AFP_FIELDS) {
+        const expected = official.afpRates[name]
+        if (expected !== undefined && differs(afpRates[name], expected)) manualOverrides.push(`tasa_afp_${name}`)
+      }
     }
 
     const automaticTrace = official ? {
       source_name: official.sourceName,
       source_url: official.sourceUrl,
       source_period: official.period,
-      obtained_at: official.obtainedAt,
+      obtained_at: official.obtainedAt ?? null,
+      complete_official_today: official.completeOfficialToday,
+      official_today_fields: official.obtainedCodes,
+      historical_degraded_fields: official.degradedCodes,
+      unavailable_fields: official.unavailableCodes,
+      field_states: official.fieldStates,
+      field_errors: official.errors,
       automatic_fields: REQUIRED_AUTOMATIC_FIELDS,
       manual_overrides: manualOverrides,
       tracked_additional_values: official.trackedAdditionalValues,
@@ -184,7 +195,7 @@ export async function guardarParametrosRemuneracionesTrazables(
       fuente_utm: sourceUtm,
       indicadores_verificados_at: ufDate && utmPeriod && sourceUf && sourceUtm ? new Date().toISOString() : null,
       fuentes_automaticas: automaticTrace,
-      parametros_automaticos_at: official ? official.obtainedAt : null,
+      parametros_automaticos_at: official?.completeOfficialToday && official.obtainedAt ? official.obtainedAt : null,
       vigente: true,
     }, { onConflict: 'empresa_id,periodo' }).select('id').single()
     if (error) throw error
@@ -200,8 +211,11 @@ export async function guardarParametrosRemuneracionesTrazables(
           periodo: period,
           uf_fecha: ufDate,
           utm_periodo: utmPeriod,
-          fuentes_oficiales: Boolean(sourceUf && sourceUtm && official),
+          fuentes_oficiales: Boolean(sourceUf && sourceUtm && official?.completeOfficialToday),
           fuente_previsional: official?.sourceName ?? null,
+          fuente_previsional_completa_hoy: official?.completeOfficialToday ?? false,
+          campos_previsionales_historicos: official?.degradedCodes ?? [],
+          campos_previsionales_no_disponibles: official?.unavailableCodes ?? [],
           anulaciones_manuales: manualOverrides,
           afp_configuradas: Object.keys(afpRates),
           tramos_impuesto: taxBrackets.length,
@@ -212,7 +226,14 @@ export async function guardarParametrosRemuneracionesTrazables(
     revalidatePath('/admin/remuneraciones')
     revalidatePath('/admin/remuneraciones/parametros')
     revalidatePath('/admin/remuneraciones/periodos')
-    return { status: 'success', message: manualOverrides.length > 0 ? `Parámetros guardados. Se registraron ${manualOverrides.length} anulaciones manuales de valores automáticos.` : 'Parámetros guardados con trazabilidad automática de fuentes oficiales.' }
+
+    if (manualOverrides.length > 0) {
+      return { status: 'success', message: `Parámetros guardados tras revisión humana. Se registraron ${manualOverrides.length} anulaciones manuales respecto de los valores de referencia disponibles.` }
+    }
+    if (official && !official.completeOfficialToday) {
+      return { status: 'success', message: 'Parámetros guardados tras revisión humana. PREVIRED estaba degradado y la trazabilidad conserva qué campos provenían del historial o no estaban disponibles.' }
+    }
+    return { status: 'success', message: 'Parámetros guardados con trazabilidad de fuentes oficiales y aprobación humana.' }
   } catch (error) {
     console.error('Error al guardar parámetros trazables:', error)
     const errorMessage = typeof error === 'object' && error && 'message' in error ? String(error.message) : String(error)
