@@ -17,6 +17,22 @@ function monthValue(value: unknown) {
   return null
 }
 
+function logServerError(context: string, error: unknown) {
+  const record = typeof error === 'object' && error !== null ? error as Record<string, unknown> : {}
+  const message = typeof record.message === 'string'
+    ? record.message
+    : error instanceof Error
+      ? error.message
+      : String(error)
+
+  console.error(context, {
+    code: typeof record.code === 'string' ? record.code : null,
+    message,
+    detail: typeof record.details === 'string' ? record.details : null,
+    hint: typeof record.hint === 'string' ? record.hint : null,
+  })
+}
+
 export async function abrirPeriodoRemuneracionesSeguro(
   _state: PayrollActionState,
   formData: FormData,
@@ -48,7 +64,11 @@ export async function abrirPeriodoRemuneracionesSeguro(
       .order('empresa_id', { ascending: false, nullsFirst: false })
       .limit(1)
       .maybeSingle()
-    if (parameterError || !parameters) return { status: 'error', message: 'Configure primero los parámetros legales del mismo periodo.' }
+    if (parameterError) {
+      logServerError('Error al consultar parámetros para abrir periodo de remuneraciones', parameterError)
+      return { status: 'error', message: 'Configure primero los parámetros legales del mismo periodo.' }
+    }
+    if (!parameters) return { status: 'error', message: 'Configure primero los parámetros legales del mismo periodo.' }
 
     const { data, error } = await adminClient.from('periodos_remuneraciones').insert({
       empresa_id: empresaId,
@@ -56,11 +76,10 @@ export async function abrirPeriodoRemuneracionesSeguro(
       parametros_id: parameters.id,
       estado: 'Abierto',
       cerrado_at: null,
-      cerrado_por: null,
     }).select('id').single()
     if (error) throw error
 
-    await adminClient.from('auditoria_eventos').insert({
+    const { error: auditError } = await adminClient.from('auditoria_eventos').insert({
       actor_user_id: actorUserId,
       empresa_id: empresaId,
       accion: 'crear',
@@ -74,6 +93,7 @@ export async function abrirPeriodoRemuneracionesSeguro(
         fuentes_oficiales: Boolean(parameters.fuente_uf && parameters.fuente_utm),
       },
     })
+    if (auditError) logServerError('Error al auditar apertura de periodo de remuneraciones', auditError)
 
     revalidatePath('/admin/remuneraciones')
     revalidatePath('/admin/remuneraciones/periodos')
@@ -83,7 +103,7 @@ export async function abrirPeriodoRemuneracionesSeguro(
       message: `Periodo abierto con parámetros fijos${parameters.uf_fecha ? ` y UF del ${parameters.uf_fecha}` : ''}. Las consultas posteriores no cambiarán estos valores.`,
     }
   } catch (error) {
-    console.error('Error al abrir periodo protegido:', error)
+    logServerError('Error al abrir periodo protegido', error)
     const errorMessage = typeof error === 'object' && error && 'message' in error ? String(error.message) : String(error)
     if (errorMessage.includes('CLOSED_PAYROLL_PERIOD_IMMUTABLE')) {
       return { status: 'error', message: 'El periodo está cerrado y no puede reabrirse ni sobrescribirse.' }
