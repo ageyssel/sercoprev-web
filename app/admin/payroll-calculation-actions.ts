@@ -43,11 +43,6 @@ type PayrollCalculationStage =
   | 'evaluacion'
   | 'persistencia'
 
-type PayrollCalculationActionResult = {
-  status: 'success' | 'error'
-  message: string
-}
-
 type DiagnosticContext = {
   stage: PayrollCalculationStage
   periodoId: string | null
@@ -124,7 +119,7 @@ function validationFailure(
   context: DiagnosticContext,
   formula: FormulaDiagnosticContext,
   message: string,
-): PayrollCalculationActionResult {
+) {
   console.error('PAYROLL_CALCULATION_VALIDATION_FAILED', {
     stage: context.stage,
     periodo_id: context.periodoId,
@@ -134,7 +129,6 @@ function validationFailure(
     formula_version: formula.version,
     user_message: message,
   })
-  return { status: 'error', message }
 }
 
 function stageLabel(stage: PayrollCalculationStage) {
@@ -318,7 +312,7 @@ async function loadPublishedFormulas(
   return formulas
 }
 
-export async function calcularPeriodoConFormulas(formData: FormData): Promise<PayrollCalculationActionResult> {
+export async function calcularPeriodoConFormulas(formData: FormData): Promise<void> {
   const context: DiagnosticContext = {
     stage: 'carga_periodo',
     periodoId: null,
@@ -576,12 +570,12 @@ export async function calcularPeriodoConFormulas(formData: FormData): Promise<Pa
     revalidatePath('/admin/remuneraciones')
     revalidatePath('/admin/remuneraciones/gestion')
     revalidatePath('/admin/remuneraciones/periodos')
-    return { status: 'success', message: `Nómina calculada correctamente para ${calculated} trabajador${calculated === 1 ? '' : 'es'}.` }
   } catch (error) {
     logCalculationError('PAYROLL_CALCULATION_FAILED', context, formulaDiagnostic, error)
-    return {
-      status: 'error',
-      message: `No fue posible calcular la nómina durante ${stageLabel(context.stage)}. El error técnico quedó registrado en el Worker para diagnóstico.`,
-    }
+    validationFailure(
+      context,
+      formulaDiagnostic,
+      `No fue posible calcular la nómina durante ${stageLabel(context.stage)}. El error técnico quedó registrado en el Worker para diagnóstico.`,
+    )
   }
 }
