@@ -9,6 +9,10 @@ function parsedValue(result: ReturnType<typeof parsePreviredHtml>, code: string)
   return result.values.find((item) => item.code === code)
 }
 
+function assertRate(actual: number | undefined, expected: number) {
+  assert.ok(actual !== undefined && Math.abs(actual - expected) < 1e-12, `esperado ${expected}, obtenido ${actual}`)
+}
+
 test('PREVIRED acepta el texto nuevo de SIS y AFP con tres porcentajes', () => {
   const result = parsePreviredHtml(`
     <main>
@@ -19,10 +23,10 @@ test('PREVIRED acepta el texto nuevo de SIS y AFP con tres porcentajes', () => {
   `, new Date('2026-08-31T18:00:00.000Z'))
 
   assert.equal(result.period, '2026-08-01')
-  assert.equal(parsedValue(result, 'TASA_SIS_EMPLEADOR')?.value, 0.0178)
-  assert.equal(parsedValue(result, 'TASA_AFP_CAPITAL')?.value, 0.1144)
+  assertRate(parsedValue(result, 'TASA_SIS_EMPLEADOR')?.value, 0.0178)
+  assertRate(parsedValue(result, 'TASA_AFP_CAPITAL')?.value, 0.1144)
   assert.equal(parsedValue(result, 'TASA_AFP_CAPITAL')?.metadata?.percentage_columns_found, 3)
-  assert.equal(parsedValue(result, 'TASA_AFP_EMPLEADOR_CUENTA_CAPITAL')?.value, 0.001)
+  assertRate(parsedValue(result, 'TASA_AFP_EMPLEADOR_CUENTA_CAPITAL')?.value, 0.001)
   assert.equal(result.errors.TASA_SIS_EMPLEADOR, undefined)
   assert.equal(result.errors.TASA_AFP_CAPITAL, undefined)
 })
@@ -34,9 +38,9 @@ test('PREVIRED mantiene compatibilidad con Tasa SIS y AFP de cuatro porcentajes'
     CAPITAL: 11,44 % 0,10 % 11,54 % 13,06 %
   `)
 
-  assert.equal(parsedValue(result, 'TASA_SIS_EMPLEADOR')?.value, 0.0162)
+  assertRate(parsedValue(result, 'TASA_SIS_EMPLEADOR')?.value, 0.0162)
   assert.equal(parsedValue(result, 'TASA_AFP_CAPITAL')?.metadata?.percentage_columns_found, 4)
-  assert.equal(parsedValue(result, 'TASA_AFP_CAPITAL')?.value, 0.1144)
+  assertRate(parsedValue(result, 'TASA_AFP_CAPITAL')?.value, 0.1144)
 })
 
 test('PREVIRED recolecta errores por campo sin perder los valores que sí pudo leer', () => {
@@ -46,7 +50,7 @@ test('PREVIRED recolecta errores por campo sin perder los valores que sí pudo l
     Para afiliados a una AFP (90 UF)
   `)
 
-  assert.equal(parsedValue(result, 'TASA_AFP_CAPITAL')?.value, 0.1144)
+  assertRate(parsedValue(result, 'TASA_AFP_CAPITAL')?.value, 0.1144)
   assert.equal(parsedValue(result, 'TOPE_IMPONIBLE_AFP_UF')?.value, 90)
   assert.equal(result.errors.TASA_SIS_EMPLEADOR, 'PREVIRED_SIS_RATE_NOT_FOUND')
   assert.equal(result.errors.INGRESO_MINIMO_GENERAL, 'PREVIRED_MINIMUM_INCOME_NOT_FOUND')
