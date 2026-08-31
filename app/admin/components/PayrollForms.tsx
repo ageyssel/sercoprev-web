@@ -4,7 +4,6 @@ import { useActionState } from 'react'
 import { InfoTip } from '@/components/ui/InfoTip'
 import {
   crearContrato,
-  crearMovimientoRemuneracion,
   crearTrabajador,
   guardarParametrosRemuneraciones,
   type PayrollActionState,
@@ -119,21 +118,6 @@ export function PayrollParametersForm({ companyId, defaults }: { companyId?: str
       <p className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs font-semibold leading-5 text-amber-800">UF y UTM pueden obtenerse automáticamente desde SII. Las demás tasas y topes deben verificarse para cada periodo antes de calcular o cerrar.</p>
       <Feedback state={state} />
       <Submit pending={pending} text="Guardar parámetros" />
-    </form>
-  )
-}
-
-export function PayrollMovementForm({ periods, workers, concepts }: { periods: SelectOption[]; workers: SelectOption[]; concepts: SelectOption[] }) {
-  const [state, action, pending] = useActionState(crearMovimientoRemuneracion, initialState)
-  return (
-    <form action={action} className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5 xl:items-end">
-      <OptionField label="Periodo" name="periodo_id" options={periods} />
-      <OptionField label="Trabajador" name="trabajador_id" options={workers} />
-      <OptionField label="Concepto" name="concepto_id" options={concepts} />
-      <Field label="Cantidad" name="cantidad" inputMode="decimal" defaultValue="1" help="Unidades del concepto. Para horas extra corresponde al número de horas; el monto debe reflejar el valor hora y recargo aplicable." />
-      <Field label="Monto" name="monto" inputMode="numeric" required help="Monto total en pesos que se incorporará como haber, descuento o aporte según la configuración del concepto." />
-      <div className="sm:col-span-2 xl:col-span-5"><Feedback state={state} /></div>
-      <div className="sm:col-span-2 xl:col-span-5"><Submit pending={pending} text="Agregar movimiento" /></div>
     </form>
   )
 }
