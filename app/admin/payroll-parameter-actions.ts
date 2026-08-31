@@ -93,19 +93,19 @@ export async function guardarParametrosRemuneracionesTrazables(
     if (!period) return { status: 'error', message: 'Periodo inválido.' }
 
     const numericFields = {
-      uf: numberValue(formData.get('uf')),
-      utm: numberValue(formData.get('utm')),
-      ingreso_minimo: numberValue(formData.get('ingreso_minimo')),
-      tope_afp_uf: numberValue(formData.get('tope_afp_uf')),
-      tope_salud_uf: numberValue(formData.get('tope_salud_uf')),
-      tope_afc_uf: numberValue(formData.get('tope_afc_uf')),
-      tasa_salud: numberValue(formData.get('tasa_salud'), 0.07),
-      tasa_sis_empleador: numberValue(formData.get('tasa_sis_empleador')),
-      tasa_afc_trabajador_indefinido: numberValue(formData.get('tasa_afc_trabajador_indefinido'), 0.006),
-      tasa_afc_empleador_indefinido: numberValue(formData.get('tasa_afc_empleador_indefinido'), 0.024),
-      tasa_afc_empleador_plazo: numberValue(formData.get('tasa_afc_empleador_plazo'), 0.03),
+      uf: numberValue(formData.get('uf'), Number.NaN),
+      utm: numberValue(formData.get('utm'), Number.NaN),
+      ingreso_minimo: numberValue(formData.get('ingreso_minimo'), Number.NaN),
+      tope_afp_uf: numberValue(formData.get('tope_afp_uf'), Number.NaN),
+      tope_salud_uf: numberValue(formData.get('tope_salud_uf'), Number.NaN),
+      tope_afc_uf: numberValue(formData.get('tope_afc_uf'), Number.NaN),
+      tasa_salud: numberValue(formData.get('tasa_salud'), Number.NaN),
+      tasa_sis_empleador: numberValue(formData.get('tasa_sis_empleador'), Number.NaN),
+      tasa_afc_trabajador_indefinido: numberValue(formData.get('tasa_afc_trabajador_indefinido'), Number.NaN),
+      tasa_afc_empleador_indefinido: numberValue(formData.get('tasa_afc_empleador_indefinido'), Number.NaN),
+      tasa_afc_empleador_plazo: numberValue(formData.get('tasa_afc_empleador_plazo'), Number.NaN),
     }
-    if (Object.values(numericFields).some((value) => Number.isNaN(value) || value < 0)) return { status: 'error', message: 'Revise los parámetros numéricos.' }
+    if (Object.values(numericFields).some((value) => Number.isNaN(value) || value < 0)) return { status: 'error', message: 'Revise y complete todos los parámetros numéricos antes de guardar.' }
     if (numericFields.uf <= 0 || numericFields.utm <= 0 || numericFields.ingreso_minimo <= 0 || numericFields.tope_afp_uf <= 0 || numericFields.tope_salud_uf <= 0 || numericFields.tope_afc_uf <= 0) return { status: 'error', message: 'UF, UTM, ingreso mínimo y topes deben ser mayores que cero.' }
     if ([numericFields.tasa_salud, numericFields.tasa_sis_empleador, numericFields.tasa_afc_trabajador_indefinido, numericFields.tasa_afc_empleador_indefinido, numericFields.tasa_afc_empleador_plazo].some((rate) => rate > 1)) return { status: 'error', message: 'Las tasas deben registrarse como decimales entre 0 y 1.' }
 
@@ -146,7 +146,7 @@ export async function guardarParametrosRemuneracionesTrazables(
 
     const manualOverrides: string[] = []
     if (official) {
-      const comparisons: Array<[string, number, number]> = [
+      const comparisons: Array<[string, number, number | undefined]> = [
         ['ingreso_minimo', numericFields.ingreso_minimo, official.incomeMinimum],
         ['tope_afp_uf', numericFields.tope_afp_uf, official.pensionCapUf],
         ['tope_salud_uf', numericFields.tope_salud_uf, official.healthCapUf],
@@ -157,15 +157,26 @@ export async function guardarParametrosRemuneracionesTrazables(
         ['tasa_afc_empleador_indefinido', numericFields.tasa_afc_empleador_indefinido, official.unemploymentEmployerIndefiniteRate],
         ['tasa_afc_empleador_plazo', numericFields.tasa_afc_empleador_plazo, official.unemploymentEmployerFixedRate],
       ]
-      for (const [field, submitted, expected] of comparisons) if (differs(submitted, expected)) manualOverrides.push(field)
-      for (const [name] of AFP_FIELDS) if (official.afpRates[name] !== undefined && differs(afpRates[name], official.afpRates[name])) manualOverrides.push(`tasa_afp_${name}`)
+      for (const [field, submitted, expected] of comparisons) {
+        if (expected !== undefined && Number.isFinite(expected) && differs(submitted, expected)) manualOverrides.push(field)
+      }
+      for (const [name] of AFP_FIELDS) {
+        const expected = official.afpRates[name]
+        if (expected !== undefined && differs(afpRates[name], expected)) manualOverrides.push(`tasa_afp_${name}`)
+      }
     }
 
     const automaticTrace = official ? {
       source_name: official.sourceName,
       source_url: official.sourceUrl,
       source_period: official.period,
-      obtained_at: official.obtainedAt,
+      obtained_at: official.obtainedAt ?? null,
+      complete_official_today: official.completeOfficialToday,
+      official_today_fields: official.obtainedCodes,
+      historical_degraded_fields: official.degradedCodes,
+      unavailable_fields: official.unavailableCodes,
+      field_states: official.fieldStates,
+      field_errors: official.errors,
       automatic_fields: REQUIRED_AUTOMATIC_FIELDS,
       manual_overrides: manualOverrides,
       tracked_additional_values: official.trackedAdditionalValues,
@@ -184,7 +195,7 @@ export async function guardarParametrosRemuneracionesTrazables(
       fuente_utm: sourceUtm,
       indicadores_verificados_at: ufDate && utmPeriod && sourceUf && sourceUtm ? new Date().toISOString() : null,
       fuentes_automaticas: automaticTrace,
-      parametros_automaticos_at: official ? official.obtainedAt : null,
+      parametros_automaticos_at: official?.completeOfficialToday && official.obtainedAt ? official.obtainedAt : null,
       vigente: true,
     }, { onConflict: 'empresa_id,periodo' }).select('id').single()
     if (error) throw error
@@ -200,8 +211,11 @@ export async function guardarParametrosRemuneracionesTrazables(
           periodo: period,
           uf_fecha: ufDate,
           utm_periodo: utmPeriod,
-          fuentes_oficiales: Boolean(sourceUf && sourceUtm && official),
+          fuentes_oficiales: Boolean(sourceUf && sourceUtm && official?.completeOfficialToday),
           fuente_previsional: official?.sourceName ?? null,
+          fuente_previsional_completa_hoy: official?.completeOfficialToday ?? false,
+          campos_previsionales_historicos: official?.degradedCodes ?? [],
+          campos_previsionales_no_disponibles: official?.unavailableCodes ?? [],
           anulaciones_manuales: manualOverrides,
           afp_configuradas: Object.keys(afpRates),
           tramos_impuesto: taxBrackets.length,
@@ -212,7 +226,14 @@ export async function guardarParametrosRemuneracionesTrazables(
     revalidatePath('/admin/remuneraciones')
     revalidatePath('/admin/remuneraciones/parametros')
     revalidatePath('/admin/remuneraciones/periodos')
-    return { status: 'success', message: manualOverrides.length > 0 ? `Parámetros guardados. Se registraron ${manualOverrides.length} anulaciones manuales de valores automáticos.` : 'Parámetros guardados con trazabilidad automática de fuentes oficiales.' }
+
+    if (manualOverrides.length > 0) {
+      return { status: 'success', message: `Parámetros guardados tras revisión humana. Se registraron ${manualOverrides.length} anulaciones manuales respecto de los valores de referencia disponibles.` }
+    }
+    if (official && !official.completeOfficialToday) {
+      return { status: 'success', message: 'Parámetros guardados tras revisión humana. PREVIRED estaba degradado y la trazabilidad conserva qué campos provenían del historial o no estaban disponibles.' }
+    }
+    return { status: 'success', message: 'Parámetros guardados con trazabilidad de fuentes oficiales y aprobación humana.' }
   } catch (error) {
     console.error('Error al guardar parámetros trazables:', error)
     const errorMessage = typeof error === 'object' && error && 'message' in error ? String(error.message) : String(error)
