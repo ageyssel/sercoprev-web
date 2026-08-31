@@ -62,6 +62,9 @@ jobs:
           cat /tmp/sercoprev-typecheck.log
           exit "$status"
 
+      - name: Test
+        run: npm test
+
       - name: Build Cloudflare Worker
         id: cloudflare-build
         shell: bash
