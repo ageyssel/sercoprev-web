@@ -3,7 +3,12 @@
 import { revalidatePath } from 'next/cache'
 import { requireAdmin } from '@/utils/supabase/require-admin'
 
-export type AccountingActionState = { status: 'idle' | 'success' | 'error'; message: string }
+export type AccountingActionState = {
+  status: 'idle' | 'success' | 'error'
+  message: string
+  entryId?: string
+  entryNumber?: number
+}
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -29,6 +34,17 @@ function monthValue(value: unknown) {
 
 async function audit(adminClient: Awaited<ReturnType<typeof requireAdmin>>['adminClient'], actorUserId: string, input: { empresaId: string; accion: string; entidad: string; entidadId?: string | null; metadata?: Record<string, unknown> }) {
   await adminClient.from('auditoria_eventos').insert({ actor_user_id: actorUserId, empresa_id: input.empresaId, accion: input.accion, entidad: input.entidad, entidad_id: input.entidadId ?? null, metadata: input.metadata ?? {} })
+}
+
+function reversalErrorMessage(message: string) {
+  if (message.includes('MOTIVO_REVERSA_INVALIDO')) return 'El motivo debe tener al menos 10 caracteres.'
+  if (message.includes('ASIENTO_ORIGEN_NO_ENCONTRADO')) return 'El asiento que intenta reversar no existe.'
+  if (message.includes('ASIENTO_ORIGEN_BORRADOR_NO_REVERSABLE')) return 'Un asiento en borrador no puede reversarse. Puede corregirse antes de contabilizar.'
+  if (message.includes('ASIENTO_ORIGEN_ANULADO_NO_REVERSABLE')) return 'Un asiento anulado no puede reversarse.'
+  if (message.includes('ASIENTO_YA_REVERTIDO')) return 'Este asiento ya tiene una reversa contabilizada.'
+  if (message.includes('PERIODO_DESTINO_NO_DISPONIBLE')) return 'No existe un periodo contable abierto para la fecha actual.'
+  if (message.includes('ASIENTO_DESCUADRADO')) return 'No fue posible contabilizar la reversa porque el asiento inverso quedó descuadrado.'
+  return 'No fue posible reversar el asiento.'
 }
 
 export async function crearCentroCosto(_state: AccountingActionState, formData: FormData): Promise<AccountingActionState> {
@@ -161,6 +177,47 @@ export async function contabilizarAsiento(formData: FormData) {
   if (error) throw error
   await audit(adminClient, actorUserId, { empresaId, accion: 'contabilizar', entidad: 'asiento_contable', entidadId: asientoId })
   revalidatePath('/admin/contabilidad')
+}
+
+export async function reversarAsiento(_state: AccountingActionState, formData: FormData): Promise<AccountingActionState> {
+  try {
+    const { adminClient, actorUserId } = await requireAdmin(['Superadministrador', 'Administrador', 'Contador'])
+    const asientoId = clean(formData.get('asiento_id'), 40)
+    const motivo = clean(formData.get('motivo'), 500)
+
+    if (!UUID_PATTERN.test(asientoId)) return { status: 'error', message: 'El asiento seleccionado no es válido.' }
+    if (motivo.length < 10) return { status: 'error', message: 'El motivo debe tener al menos 10 caracteres.' }
+
+    const { data, error } = await adminClient.rpc('reversar_asiento', {
+      p_asiento_id: asientoId,
+      p_motivo: motivo,
+      p_actor_user_id: actorUserId,
+    })
+
+    if (error) {
+      console.error('Error RPC al reversar asiento:', error)
+      return { status: 'error', message: reversalErrorMessage(error.message) }
+    }
+
+    const result = Array.isArray(data) ? data[0] : data
+    const entryId = typeof result?.asiento_inverso_id === 'string' ? result.asiento_inverso_id : ''
+    const entryNumber = Number(result?.numero_inverso)
+    if (!UUID_PATTERN.test(entryId) || !Number.isFinite(entryNumber)) throw new Error('INVALID_REVERSAL_RESULT')
+
+    revalidatePath('/admin/contabilidad')
+    revalidatePath('/admin/contabilidad/diario')
+    revalidatePath('/admin/contabilidad/reportes')
+
+    return {
+      status: 'success',
+      message: `Asiento inverso N° ${entryNumber} creado y contabilizado.`,
+      entryId,
+      entryNumber,
+    }
+  } catch (error) {
+    console.error('Error al reversar asiento:', error)
+    return { status: 'error', message: 'No fue posible reversar el asiento.' }
+  }
 }
 
 export async function registrarDocumentoTributario(_state: AccountingActionState, formData: FormData): Promise<AccountingActionState> {

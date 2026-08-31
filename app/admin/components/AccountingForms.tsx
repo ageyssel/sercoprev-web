@@ -1,12 +1,13 @@
 'use client'
 
-import { useActionState } from 'react'
+import { useActionState, useEffect, useRef } from 'react'
 import {
   crearAsientoSimple,
   crearCentroCosto,
   crearCuentaContable,
   crearPeriodoContable,
   registrarDocumentoTributario,
+  reversarAsiento,
   type AccountingActionState,
 } from '@/app/admin/accounting-actions'
 
@@ -63,6 +64,48 @@ export function SimpleEntryForm({ companyId, periods, accounts }: { companyId: s
       <Feedback state={state} />
       <Submit pending={pending} text="Crear asiento cuadrado" />
     </form>
+  )
+}
+
+export function ReverseEntryButton({ entryId, entryNumber }: { entryId: string; entryNumber: number }) {
+  const dialogRef = useRef<HTMLDialogElement>(null)
+  const [state, action, pending] = useActionState(reversarAsiento, initialState)
+
+  useEffect(() => {
+    if (state.status === 'success') dialogRef.current?.close()
+  }, [state.status])
+
+  return (
+    <div className="grid gap-2">
+      <button type="button" onClick={() => dialogRef.current?.showModal()} className="h-9 rounded-lg border border-amber-300 bg-amber-50 px-3 text-xs font-black text-amber-800 transition hover:bg-amber-100">Reversar</button>
+      {state.status === 'success' && <p role="status" className="max-w-48 text-xs font-bold text-emerald-700">{state.message}</p>}
+      <dialog ref={dialogRef} className="w-[min(92vw,560px)] rounded-3xl border border-slate-200 bg-white p-0 shadow-2xl backdrop:bg-slate-950/40">
+        <div className="p-6 sm:p-7">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-amber-700">Corrección contable</p>
+              <h3 className="mt-2 text-xl font-black text-[#0f2438]">Reversar asiento N° {entryNumber}</h3>
+              <p className="mt-2 text-sm leading-6 text-slate-600">Se creará un asiento nuevo con Debe y Haber invertidos en el periodo abierto actual. El asiento original seguirá contabilizado e inmutable.</p>
+            </div>
+            <button type="button" aria-label="Cerrar" onClick={() => dialogRef.current?.close()} className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-slate-200 text-lg font-bold text-slate-500 hover:bg-slate-50">×</button>
+          </div>
+
+          <form action={action} className="mt-6 grid gap-4">
+            <input type="hidden" name="asiento_id" value={entryId} />
+            <label className="grid gap-2 text-sm font-bold text-slate-700">
+              Motivo de la reversa
+              <textarea name="motivo" required minLength={10} maxLength={500} rows={4} placeholder="Explique el error de imputación y la razón de la corrección…" className="rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm font-medium text-[#17324a] outline-none transition focus:border-[#134b78] focus:ring-4 focus:ring-[#134b78]/10" />
+              <span className="text-xs font-medium text-slate-500">Mínimo 10 caracteres. El motivo quedará registrado en auditoría.</span>
+            </label>
+            {state.status === 'error' && <Feedback state={state} />}
+            <div className="flex flex-wrap justify-end gap-3">
+              <button type="button" onClick={() => dialogRef.current?.close()} disabled={pending} className="min-h-11 rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-black text-slate-700 disabled:opacity-60">Cancelar</button>
+              <button type="submit" disabled={pending} className="min-h-11 rounded-xl bg-amber-700 px-5 py-3 text-sm font-black text-white transition hover:bg-amber-800 disabled:opacity-60">{pending ? 'Reversando…' : 'Confirmar reversa'}</button>
+            </div>
+          </form>
+        </div>
+      </dialog>
+    </div>
   )
 }
 
