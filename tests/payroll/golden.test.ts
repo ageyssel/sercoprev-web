@@ -1,38 +1,20 @@
 import assert from 'node:assert/strict'
-import { register } from 'node:module'
 import test from 'node:test'
 
-import type { PayrollResult } from '../../lib/payroll'
-
-const aliasResolver = `
-import { pathToFileURL } from 'node:url'
-
-export async function resolve(specifier, context, nextResolve) {
-  if (specifier.startsWith('@/')) {
-    return {
-      url: pathToFileURL(\`${process.cwd()}/\${specifier.slice(2)}.ts\`).href,
-      shortCircuit: true,
-    }
-  }
-
-  return nextResolve(specifier, context)
-}
-`
-
-register(`data:text/javascript,${encodeURIComponent(aliasResolver)}`, import.meta.url)
-
-const payrollModulePath = '../../lib/payroll.ts'
-const fixturesModulePath = './fixtures/casos.ts'
-
-const [{ calculatePayroll }, { CASOS_GOLDEN }] = await Promise.all([
-  import(payrollModulePath) as Promise<typeof import('../../lib/payroll')>,
-  import(fixturesModulePath) as Promise<typeof import('./fixtures/casos')>,
-])
+import { calculatePayroll, type PayrollResult } from '@/lib/payroll'
+import { CASOS_GOLDEN } from '@/tests/payroll/fixtures/casos'
 
 function formatValue(value: unknown) {
   const serialized = JSON.stringify(value)
   return serialized ?? String(value)
 }
+
+// Cuando existan casos aprobados por un especialista laboral, este centinela debe
+// reemplazarse por una aserción de cantidad mínima esperada de casos golden.
+test('andamio golden de remuneraciones está operativo', () => {
+  assert.equal(typeof calculatePayroll, 'function')
+  assert.ok(Array.isArray(CASOS_GOLDEN))
+})
 
 for (const caso of CASOS_GOLDEN) {
   test(caso.nombre, () => {
