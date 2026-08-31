@@ -154,7 +154,7 @@ export async function guardarParametrosRemuneracionesTrazables(
         ['tasa_salud', numericFields.tasa_salud, official.healthRate],
         ['tasa_sis_empleador', numericFields.tasa_sis_empleador, official.sisEmployerRate],
         ['tasa_afc_trabajador_indefinido', numericFields.tasa_afc_trabajador_indefinido, official.unemploymentWorkerIndefiniteRate],
-        ['tasa_afc_empleador_indefinido', numericFields.tasa_afc_empleador_indefiniteRate],
+        ['tasa_afc_empleador_indefinido', numericFields.tasa_afc_empleador_indefinido, official.unemploymentEmployerIndefiniteRate],
         ['tasa_afc_empleador_plazo', numericFields.tasa_afc_empleador_plazo, official.unemploymentEmployerFixedRate],
       ]
       for (const [field, submitted, expected] of comparisons) {
