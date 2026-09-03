@@ -58,7 +58,7 @@ begin
       join pg_catalog.pg_class idx on idx.oid = i.indexrelid
       join pg_catalog.pg_namespace ns on ns.oid = idx.relnamespace
       where i.indrelid = 'public.empresas'::regclass
-        and estado_impuestos_attnum = any(i.indkey::smallint[])
+        and pg_catalog.pg_get_indexdef(i.indexrelid) ilike '%estado_impuestos%'
 
       union
 
