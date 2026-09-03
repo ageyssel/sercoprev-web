@@ -9,12 +9,8 @@ import { isCurrentStaffMfaVerified } from '@/lib/staff-mfa'
 
 export type PasswordActionState = { status: 'idle' | 'error'; message: string }
 
-function isStrongPassword(value: string) {
-  return value.length >= 12
-    && /[a-z]/.test(value)
-    && /[A-Z]/.test(value)
-    && /\d/.test(value)
-    && /[^A-Za-z0-9]/.test(value)
+function isValidPassword(value: string) {
+  return value.length >= 6
 }
 
 export async function cambiarClave(
@@ -25,7 +21,7 @@ export async function cambiarClave(
   const confirmation = typeof formData.get('confirmation') === 'string' ? String(formData.get('confirmation')) : ''
 
   if (password !== confirmation) return { status: 'error', message: 'Las contraseñas no coinciden.' }
-  if (!isStrongPassword(password)) return { status: 'error', message: 'Use al menos 12 caracteres con mayúscula, minúscula, número y símbolo.' }
+  if (!isValidPassword(password)) return { status: 'error', message: 'Use una contraseña de al menos 6 caracteres.' }
 
   const supabase = await createClient()
   const context = await resolveUserContext(supabase)
