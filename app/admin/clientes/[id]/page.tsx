@@ -37,9 +37,8 @@ type Company = {
   telefono: string | null
   email_contacto: string | null
   contador_asignado: string | null
-  ejecutivo_asignado: string | null
   estado_cliente: string
-  estado_impuestos: string
+  estado_contable: string
   plan_servicio: string | null
   honorario_mensual: number | null
   dia_pago: number | null
@@ -124,7 +123,7 @@ export default async function ClientWorkspacePage({ params }: { params: Promise<
   const supabase = await createClient()
 
   const [companyResult, obligationsResult, tasksResult, requestsResult, servicesResult, documentsResult, financialResult] = await Promise.all([
-    supabase.from('empresas').select('id, razon_social, nombre_fantasia, rut, tipo_sociedad, giro, regimen_tributario, inicio_actividades, direccion, comuna, ciudad, representante_legal, representante_rut, telefono, email_contacto, contador_asignado, ejecutivo_asignado, estado_cliente, estado_impuestos, plan_servicio, honorario_mensual, dia_pago, notas_internas, created_at, ultima_actividad_at').eq('id', id).eq('es_admin', false).single(),
+    supabase.from('empresas').select('id, razon_social, nombre_fantasia, rut, tipo_sociedad, giro, regimen_tributario, inicio_actividades, direccion, comuna, ciudad, representante_legal, representante_rut, telefono, email_contacto, contador_asignado, estado_cliente, estado_contable, plan_servicio, honorario_mensual, dia_pago, notas_internas, created_at, ultima_actividad_at').eq('id', id).eq('es_admin', false).single(),
     supabase.from('obligaciones').select('id, titulo, tipo, periodo, fecha_vencimiento, estado, prioridad, monto, requiere_accion_cliente, descripcion').eq('empresa_id', id).order('fecha_vencimiento'),
     supabase.from('tareas').select('id, titulo, descripcion, responsable, fecha_vencimiento, estado, prioridad').eq('empresa_id', id).order('created_at', { ascending: false }).limit(40),
     supabase.from('solicitudes_documentos').select('id, titulo, descripcion, categoria, periodo, fecha_limite, estado, created_at').eq('empresa_id', id).order('created_at', { ascending: false }).limit(40),
@@ -162,7 +161,7 @@ export default async function ClientWorkspacePage({ params }: { params: Promise<
             <p className="text-xs font-black uppercase tracking-[0.18em] text-[#e3bf63]">Ficha 360° del cliente</p>
             <h1 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">{company.nombre_fantasia || company.razon_social}</h1>
             <p className="mt-2 text-sm text-slate-300">{company.razon_social} · RUT {company.rut}</p>
-            <div className="mt-5 flex flex-wrap gap-2"><StatusBadge status={company.estado_cliente} /><StatusBadge status={`IVA: ${company.estado_impuestos}`} /></div>
+            <div className="mt-5 flex flex-wrap gap-2"><StatusBadge status={company.estado_cliente} /><StatusBadge status={company.estado_contable} /></div>
           </div>
           <div className="grid gap-4 text-sm sm:grid-cols-3 lg:text-right">
             <HeaderStat label="Contador" value={company.contador_asignado || 'Sin asignar'} />
