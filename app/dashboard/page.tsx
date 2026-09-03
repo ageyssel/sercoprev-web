@@ -28,7 +28,7 @@ export default async function DashboardPage() {
   const { sessionClient: supabase, company, role, displayName } = access
   const { data: empresa, error: companyError } = await supabase
     .from('empresas')
-    .select('id, razon_social, nombre_fantasia, rut, estado_cliente, contador_asignado, ejecutivo_asignado, plan_servicio')
+    .select('id, razon_social, nombre_fantasia, rut, estado_cliente, contador_asignado, plan_servicio')
     .eq('id', company.id)
     .single()
   if (companyError || !empresa) redirect('/login?message=Empresa no disponible')
