@@ -70,7 +70,7 @@ export default async function AdminPage() {
     supabase.from('obligaciones').select('id, titulo, fecha_vencimiento, estado, prioridad, empresa_id, empresa:empresas(razon_social)').gte('fecha_vencimiento', today).lte('fecha_vencimiento', inThirtyDays).not('estado', 'in', '(Presentada,Pagada,No aplica)').order('fecha_vencimiento').limit(8),
     supabase.from('tareas').select('id, titulo, fecha_vencimiento, estado, prioridad, responsable, empresa_id, empresa:empresas(razon_social)').not('estado', 'eq', 'Completada').order('fecha_vencimiento', { ascending: true, nullsFirst: false }).limit(8),
     supabase.from('leads').select('id, nombre, empresa, servicio, estado, created_at').is('deleted_at', null).order('created_at', { ascending: false }).limit(6),
-    supabase.from('empresas').select('id, razon_social, estado_cliente, ultima_actividad_at').eq('es_admin', false).in('estado_cliente', ['En incorporación', 'Requiere atención', 'Suspendido']).order('updated_at', { ascending: false }).limit(6),
+    supabase.from('empresas').select('id, razon_social, estado_cliente, ultima_actividad_at').eq('es_admin', false).in('estado_cliente', ['En incorporación', 'Suspendido']).order('updated_at', { ascending: false }).limit(6),
   ])
 
   const obligations = (obligationsResult.data ?? []) as ObligationRow[]
@@ -144,7 +144,7 @@ export default async function AdminPage() {
         </section>
 
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <PanelHeader icon="warning" title="Clientes que requieren atención" description="Incorporaciones, alertas o cuentas suspendidas." href="/admin/clientes" />
+          <PanelHeader icon="warning" title="Clientes que requieren atención" description="Incorporaciones o cuentas suspendidas." href="/admin/clientes" />
           <div className="mt-4 grid gap-2.5">
             {clients.length === 0 ? <Empty text="No hay clientes marcados para atención." icon="check" /> : clients.map((client) => <Link key={client.id} href={`/admin/clientes/${client.id}`} className="flex items-center justify-between gap-4 rounded-xl border border-slate-200 px-4 py-3.5 hover:border-[#174f7a]/25 hover:bg-[#f8fafc]"><div className="min-w-0"><p className="truncate text-[13px] font-extrabold text-[#193247]">{client.razon_social}</p><p className="mt-1 text-[10px] font-medium text-slate-500">Última actividad: {client.ultima_actividad_at ? formatDate(client.ultima_actividad_at) : 'sin registro'}</p></div><StatusBadge status={client.estado_cliente} /></Link>)}
           </div>
