@@ -1,6 +1,6 @@
 type Strength = {
   label: string
-  width: string
+  widthClass: string
   barClass: string
   textClass: string
   value: number
@@ -8,7 +8,7 @@ type Strength = {
 
 function passwordStrength(password: string): Strength {
   if (!password) {
-    return { label: 'Sin ingresar', width: '0%', barClass: 'bg-slate-300', textClass: 'text-slate-500', value: 0 }
+    return { label: 'Sin ingresar', widthClass: 'w-0', barClass: 'bg-slate-300', textClass: 'text-slate-500', value: 0 }
   }
 
   const classes = [/[A-Za-z]/.test(password), /\d/.test(password), /[^A-Za-z0-9]/.test(password)].filter(Boolean).length
@@ -19,10 +19,10 @@ function passwordStrength(password: string): Strength {
   if (classes >= 2) score += 1
   if (password.length >= 14 || classes === 3) score += 1
 
-  if (score <= 1) return { label: 'Débil', width: '25%', barClass: 'bg-red-500', textClass: 'text-red-700', value: 1 }
-  if (score === 2) return { label: 'Aceptable', width: '50%', barClass: 'bg-amber-500', textClass: 'text-amber-700', value: 2 }
-  if (score === 3) return { label: 'Buena', width: '75%', barClass: 'bg-blue-500', textClass: 'text-blue-700', value: 3 }
-  return { label: 'Fuerte', width: '100%', barClass: 'bg-emerald-500', textClass: 'text-emerald-700', value: 4 }
+  if (score <= 1) return { label: 'Débil', widthClass: 'w-1/4', barClass: 'bg-red-500', textClass: 'text-red-700', value: 1 }
+  if (score === 2) return { label: 'Aceptable', widthClass: 'w-1/2', barClass: 'bg-amber-500', textClass: 'text-amber-700', value: 2 }
+  if (score === 3) return { label: 'Buena', widthClass: 'w-3/4', barClass: 'bg-blue-500', textClass: 'text-blue-700', value: 3 }
+  return { label: 'Fuerte', widthClass: 'w-full', barClass: 'bg-emerald-500', textClass: 'text-emerald-700', value: 4 }
 }
 
 export function PasswordStrengthMeter({ password }: { password: string }) {
@@ -43,7 +43,7 @@ export function PasswordStrengthMeter({ password }: { password: string }) {
         aria-valuetext={strength.label}
         className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-200"
       >
-        <div className={`h-full rounded-full transition-all ${strength.barClass}`} style={{ width: strength.width }} />
+        <div className={`h-full rounded-full transition-all ${strength.widthClass} ${strength.barClass}`} />
       </div>
       <p className="mt-1.5 text-xs text-slate-500">Mínimo 6 caracteres. La fortaleza mostrada es solo informativa.</p>
     </div>
