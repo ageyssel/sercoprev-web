@@ -82,12 +82,8 @@ function isValidChileanRut(value: string) {
   return verifier === expected
 }
 
-function isStrongTemporaryPassword(value: string) {
-  return value.length >= 12
-    && /[a-z]/.test(value)
-    && /[A-Z]/.test(value)
-    && /\d/.test(value)
-    && /[^A-Za-z0-9]/.test(value)
+function isValidTemporaryPassword(value: string) {
+  return value.length >= 6
 }
 
 function toNullableAmount(value: unknown) {
@@ -183,10 +179,10 @@ export async function crearCliente(
       return { status: 'error', message: 'Ingrese una razón social válida.' }
     }
 
-    if (!isStrongTemporaryPassword(password)) {
+    if (!isValidTemporaryPassword(password)) {
       return {
         status: 'error',
-        message: 'La contraseña temporal debe tener 12 caracteres e incluir mayúscula, minúscula, número y símbolo.',
+        message: 'La contraseña temporal debe tener al menos 6 caracteres.',
       }
     }
 
@@ -209,7 +205,6 @@ export async function crearCliente(
       user_id: authData.user.id,
       rut,
       razon_social: razonSocial,
-      estado_impuestos: 'Pendiente',
       es_admin: false,
       must_change_password: true,
     })

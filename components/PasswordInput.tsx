@@ -13,8 +13,10 @@ export function PasswordInput() {
         name="password"
         type={visible ? 'text' : 'password'}
         required
+        minLength={6}
+        maxLength={128}
         autoComplete="current-password"
-        placeholder="••••••••••••"
+        placeholder="••••••"
         className="h-12 w-full rounded-xl border border-slate-300 bg-white pl-10 pr-24 text-sm font-medium text-[#17324a] outline-none focus:border-[#134b78] focus:ring-4 focus:ring-[#134b78]/10"
       />
       <button

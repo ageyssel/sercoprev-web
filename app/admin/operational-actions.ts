@@ -85,8 +85,12 @@ export async function actualizarCliente(
     }
 
     const estadoCliente = clean(formData.get('estado_cliente'), 40)
-    const allowedStates = ['En incorporación', 'Activo', 'Requiere atención', 'Suspendido', 'Archivado']
+    const allowedStates = ['En incorporación', 'Activo', 'Suspendido', 'Archivado']
     if (!allowedStates.includes(estadoCliente)) return { status: 'error', message: 'Estado de cliente inválido.' }
+
+    const estadoContable = clean(formData.get('estado_contable'), 60)
+    const allowedAccountingStates = ['En proceso de inicio de actividades', 'Con movimiento', 'Sin movimiento', 'Término de giro']
+    if (!allowedAccountingStates.includes(estadoContable)) return { status: 'error', message: 'Estado contable inválido.' }
 
     const { error } = await adminClient.from('empresas').update({
       nombre_fantasia: nullable(formData.get('nombre_fantasia'), 160),
@@ -102,13 +106,12 @@ export async function actualizarCliente(
       telefono: nullable(formData.get('telefono'), 40),
       email_contacto: emailContacto || null,
       contador_asignado: nullable(formData.get('contador_asignado'), 160),
-      ejecutivo_asignado: nullable(formData.get('ejecutivo_asignado'), 160),
       estado_cliente: estadoCliente,
+      estado_contable: estadoContable,
       plan_servicio: nullable(formData.get('plan_servicio'), 160),
       honorario_mensual: honorario,
       dia_pago: diaPago,
       notas_internas: nullable(formData.get('notas_internas'), 4000),
-      estado_impuestos: clean(formData.get('estado_impuestos'), 60) || 'Pendiente',
       ultima_actividad_at: new Date().toISOString(),
     }).eq('id', empresaId).eq('es_admin', false)
 

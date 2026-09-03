@@ -71,7 +71,7 @@ export async function login(formData: FormData) {
     ? String(formData.get('password')).slice(0, 128)
     : ''
 
-  if (!identifier || password.length < 8) redirect('/login?message=Credenciales incorrectas')
+  if (!identifier || password.length < 6) redirect('/login?message=Credenciales incorrectas')
 
   const email = await resolveAuthEmail(identifier)
   if (!email) redirect('/login?message=Credenciales incorrectas')

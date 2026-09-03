@@ -31,9 +31,8 @@ type CompanyProfile = {
   telefono: string | null
   email_contacto: string | null
   contador_asignado: string | null
-  ejecutivo_asignado: string | null
   estado_cliente: string
-  estado_impuestos: string
+  estado_contable: string
   plan_servicio: string | null
   honorario_mensual: number | null
   dia_pago: number | null
@@ -51,7 +50,8 @@ export function ClientProfileForm({ company }: { company: CompanyProfile }) {
         <Field label="Giro" name="giro" defaultValue={company.giro} placeholder="Actividad principal" />
         <Field label="Régimen tributario" name="regimen_tributario" defaultValue={company.regimen_tributario} placeholder="Pro Pyme General…" />
         <Field label="Inicio de actividades" name="inicio_actividades" type="date" defaultValue={company.inicio_actividades} />
-        <SelectField label="Estado del cliente" name="estado_cliente" defaultValue={company.estado_cliente} options={['En incorporación', 'Activo', 'Requiere atención', 'Suspendido', 'Archivado']} />
+        <SelectField label="Estado del cliente" name="estado_cliente" defaultValue={company.estado_cliente} options={['En incorporación', 'Activo', 'Suspendido', 'Archivado']} />
+        <SelectField label="Estado contable" name="estado_contable" defaultValue={company.estado_contable} options={['En proceso de inicio de actividades', 'Con movimiento', 'Sin movimiento', 'Término de giro']} />
         <Field label="Dirección" name="direccion" defaultValue={company.direccion} placeholder="Calle y número" />
         <Field label="Comuna" name="comuna" defaultValue={company.comuna} placeholder="Comuna" />
         <Field label="Ciudad" name="ciudad" defaultValue={company.ciudad} placeholder="Ciudad" />
@@ -60,11 +60,9 @@ export function ClientProfileForm({ company }: { company: CompanyProfile }) {
         <Field label="Teléfono" name="telefono" type="tel" defaultValue={company.telefono} placeholder="+56 9…" />
         <Field label="Correo de contacto" name="email_contacto" type="email" defaultValue={company.email_contacto} placeholder="contacto@empresa.cl" />
         <Field label="Contador asignado" name="contador_asignado" defaultValue={company.contador_asignado} placeholder="Nombre del responsable" />
-        <Field label="Ejecutivo asignado" name="ejecutivo_asignado" defaultValue={company.ejecutivo_asignado} placeholder="Nombre del ejecutivo" />
         <Field label="Plan o servicio principal" name="plan_servicio" defaultValue={company.plan_servicio} placeholder="Contabilidad mensual…" />
         <Field label="Honorario mensual" name="honorario_mensual" inputMode="numeric" defaultValue={company.honorario_mensual?.toString()} placeholder="350000" />
         <Field label="Día de pago" name="dia_pago" type="number" min="1" max="31" defaultValue={company.dia_pago?.toString()} placeholder="10" />
-        <Field label="Estado IVA / impuestos" name="estado_impuestos" defaultValue={company.estado_impuestos} placeholder="Al día" />
       </div>
       <label className="grid gap-2 text-sm font-bold text-slate-700">Notas internas<textarea name="notas_internas" defaultValue={company.notas_internas ?? ''} rows={5} maxLength={4000} className={textareaClass} placeholder="Acuerdos, particularidades y observaciones internas del cliente." /></label>
       <Feedback state={state} />

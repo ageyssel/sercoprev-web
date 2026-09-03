@@ -1,6 +1,7 @@
 'use client'
 
-import { useActionState } from 'react'
+import { useActionState, useState } from 'react'
+import { PasswordStrengthMeter } from '@/components/PasswordStrengthMeter'
 import { crearClienteConRut, type CreateClientState } from '../create-client-actions'
 import { SubmitButton } from './SubmitButton'
 
@@ -11,6 +12,7 @@ const INITIAL_STATE: CreateClientState = {
 
 export function CreateClientForm() {
   const [state, formAction] = useActionState(crearClienteConRut, INITIAL_STATE)
+  const [password, setPassword] = useState('')
 
   return (
     <form action={formAction} className="space-y-4">
@@ -73,12 +75,15 @@ export function CreateClientForm() {
           name="password"
           type="password"
           required
-          minLength={12}
+          minLength={6}
           maxLength={128}
           autoComplete="new-password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
           className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 outline-none placeholder-gray-500 focus:ring-2 focus:ring-blue-500"
-          placeholder="12+ caracteres, mayúscula, número y símbolo"
+          placeholder="Mínimo 6 caracteres"
         />
+        <PasswordStrengthMeter password={password} />
         <p className="mt-2 text-xs text-gray-500">
           Entréguela por un canal seguro. El cliente deberá cambiarla en su primer ingreso.
         </p>

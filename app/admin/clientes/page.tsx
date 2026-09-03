@@ -14,7 +14,7 @@ type ClientRow = {
   nombre_fantasia: string | null
   rut: string
   estado_cliente: string
-  estado_impuestos: string
+  estado_contable: string
   contador_asignado: string | null
   plan_servicio: string | null
   honorario_mensual: number | null
@@ -22,17 +22,19 @@ type ClientRow = {
   created_at: string
 }
 
-const allowedStates = ['Todos', 'En incorporación', 'Activo', 'Requiere atención', 'Suspendido', 'Archivado']
+const allowedStates = ['Todos', 'En incorporación', 'Activo', 'Suspendido', 'Archivado']
+const allowedAccountingStates = ['Todos', 'En proceso de inicio de actividades', 'Con movimiento', 'Sin movimiento', 'Término de giro']
 
-export default async function ClientsPage({ searchParams }: { searchParams: Promise<{ q?: string; estado?: string }> }) {
+export default async function ClientsPage({ searchParams }: { searchParams: Promise<{ q?: string; estado?: string; contable?: string }> }) {
   const params = await searchParams
   const search = (params.q ?? '').trim().slice(0, 100)
   const state = allowedStates.includes(params.estado ?? '') ? params.estado ?? 'Todos' : 'Todos'
+  const accountingState = allowedAccountingStates.includes(params.contable ?? '') ? params.contable ?? 'Todos' : 'Todos'
   const supabase = await createClient()
 
   let query = supabase
     .from('empresas')
-    .select('id, razon_social, nombre_fantasia, rut, estado_cliente, estado_impuestos, contador_asignado, plan_servicio, honorario_mensual, ultima_actividad_at, created_at')
+    .select('id, razon_social, nombre_fantasia, rut, estado_cliente, estado_contable, contador_asignado, plan_servicio, honorario_mensual, ultima_actividad_at, created_at')
     .eq('es_admin', false)
     .order('razon_social')
 
@@ -41,6 +43,7 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
     query = query.or(`razon_social.ilike.%${safe}%,nombre_fantasia.ilike.%${safe}%,rut.ilike.%${safe}%`)
   }
   if (state !== 'Todos') query = query.eq('estado_cliente', state)
+  if (accountingState !== 'Todos') query = query.eq('estado_contable', accountingState)
 
   const { data, error } = await query
   const clients = (data ?? []) as ClientRow[]
@@ -50,14 +53,15 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
       <ModulePageHeader
         eyebrow="Cartera y comercial"
         title="Clientes"
-        description="Directorio de empresas, estado de atención, responsables, servicios, honorarios y acceso a la ficha operativa 360°."
+        description="Directorio de empresas, estado comercial y contable, responsables, servicios, honorarios y acceso a la ficha operativa 360°."
         actions={<a href="#nuevo" className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[#10283d] px-4 text-xs font-extrabold text-white shadow-sm hover:bg-[#173d59]"><AppIcon name="plus" className="h-3.5 w-3.5" />Registrar cliente</a>}
       />
 
       <section className="mt-7 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-        <form className="grid gap-3 lg:grid-cols-[1fr_220px_auto] lg:items-end" method="get">
+        <form className="grid gap-3 lg:grid-cols-[1fr_190px_250px_auto] lg:items-end" method="get">
           <label className="grid gap-1.5 text-[11px] font-extrabold uppercase tracking-[0.08em] text-slate-500">Buscar cliente<div className="relative"><AppIcon name="search" className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input name="q" defaultValue={search} placeholder="Razón social, nombre o RUT" className="h-11 w-full rounded-xl border border-slate-300 bg-white pl-10 pr-3 text-[13px] font-semibold normal-case tracking-normal" /></div></label>
-          <label className="grid gap-1.5 text-[11px] font-extrabold uppercase tracking-[0.08em] text-slate-500">Estado<select name="estado" defaultValue={state} className="h-11 rounded-xl border border-slate-300 bg-white px-3 text-[13px] font-semibold normal-case tracking-normal">{allowedStates.map((item) => <option key={item}>{item}</option>)}</select></label>
+          <label className="grid gap-1.5 text-[11px] font-extrabold uppercase tracking-[0.08em] text-slate-500">Estado comercial<select name="estado" defaultValue={state} className="h-11 rounded-xl border border-slate-300 bg-white px-3 text-[13px] font-semibold normal-case tracking-normal">{allowedStates.map((item) => <option key={item}>{item}</option>)}</select></label>
+          <label className="grid gap-1.5 text-[11px] font-extrabold uppercase tracking-[0.08em] text-slate-500">Estado contable<select name="contable" defaultValue={accountingState} className="h-11 rounded-xl border border-slate-300 bg-white px-3 text-[13px] font-semibold normal-case tracking-normal">{allowedAccountingStates.map((item) => <option key={item}>{item}</option>)}</select></label>
           <button type="submit" className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[#10283d] px-5 text-xs font-extrabold text-white hover:bg-[#173d59]"><AppIcon name="search" className="h-3.5 w-3.5" />Aplicar filtros</button>
         </form>
       </section>
@@ -70,13 +74,13 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
           <span className="inline-flex items-center gap-2 text-[10px] font-extrabold uppercase tracking-[0.12em] text-slate-400"><AppIcon name="shield" className="h-3.5 w-3.5" />Acceso multiempresa protegido</span>
         </div>
         <div className="overflow-x-auto">
-          <table className="min-w-[1050px] w-full text-left text-[13px]">
-            <thead><tr><th className="px-5 py-3.5">Empresa</th><th className="px-5 py-3.5">Estado</th><th className="px-5 py-3.5">Responsable</th><th className="px-5 py-3.5">Servicio</th><th className="px-5 py-3.5 text-right">Honorario</th><th className="px-5 py-3.5">Actividad</th><th className="px-5 py-3.5"></th></tr></thead>
+          <table className="min-w-[1100px] w-full text-left text-[13px]">
+            <thead><tr><th className="px-5 py-3.5">Empresa</th><th className="px-5 py-3.5">Estados</th><th className="px-5 py-3.5">Responsable</th><th className="px-5 py-3.5">Servicio</th><th className="px-5 py-3.5 text-right">Honorario</th><th className="px-5 py-3.5">Actividad</th><th className="px-5 py-3.5"></th></tr></thead>
             <tbody>
               {clients.length === 0 ? <tr><td colSpan={7} className="px-5 py-16 text-center text-slate-500">No hay clientes que coincidan con los filtros.</td></tr> : clients.map((client) => (
                 <tr key={client.id} className="border-t border-slate-100">
                   <td className="px-5 py-4"><p className="font-extrabold text-[#193247]">{client.nombre_fantasia || client.razon_social}</p><p className="mt-1 text-[11px] font-medium text-slate-500">{client.razon_social} · {client.rut}</p></td>
-                  <td className="px-5 py-4"><div className="flex flex-col items-start gap-1.5"><StatusBadge status={client.estado_cliente} /><span className="text-[10px] font-medium text-slate-500">IVA: {client.estado_impuestos}</span></div></td>
+                  <td className="px-5 py-4"><div className="flex flex-col items-start gap-1.5"><StatusBadge status={client.estado_cliente} /><StatusBadge status={client.estado_contable} /></div></td>
                   <td className="px-5 py-4 font-medium text-slate-600">{client.contador_asignado || 'Sin asignar'}</td>
                   <td className="px-5 py-4 font-medium text-slate-600">{client.plan_servicio || 'Sin detalle'}</td>
                   <td className="px-5 py-4 text-right font-extrabold text-[#174f7a]">{formatCurrency(client.honorario_mensual)}</td>
