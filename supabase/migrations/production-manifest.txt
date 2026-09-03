@@ -18,3 +18,4 @@ supabase/migrations/202608170020_operational_formulas_client_access.sql
 supabase/migrations/202608170021_formula_week_run_guard.sql
 supabase/migrations/202608170022_atomic_formula_publication.sql
 supabase/migrations/202609010024_accounting_reversal.sql
+supabase/migrations/202609030025_client_status_split.sql
