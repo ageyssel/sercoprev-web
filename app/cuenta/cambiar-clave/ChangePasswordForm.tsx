@@ -1,7 +1,8 @@
 'use client'
 
-import { useActionState } from 'react'
+import { useActionState, useState } from 'react'
 import { SubmitButton } from '@/app/admin/components/SubmitButton'
+import { PasswordStrengthMeter } from '@/components/PasswordStrengthMeter'
 import { cambiarClave, type PasswordActionState } from './actions'
 
 const INITIAL_STATE: PasswordActionState = {
@@ -11,6 +12,7 @@ const INITIAL_STATE: PasswordActionState = {
 
 export function ChangePasswordForm() {
   const [state, formAction] = useActionState(cambiarClave, INITIAL_STATE)
+  const [password, setPassword] = useState('')
 
   return (
     <form action={formAction} className="space-y-5">
@@ -23,11 +25,14 @@ export function ChangePasswordForm() {
           name="password"
           type="password"
           required
-          minLength={12}
+          minLength={6}
           maxLength={128}
           autoComplete="new-password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
           className="w-full px-4 py-3 rounded-md border border-gray-300 outline-none focus:ring-2 focus:ring-[#1e3a8a] text-gray-900 bg-gray-50"
         />
+        <PasswordStrengthMeter password={password} />
       </div>
 
       <div>
@@ -39,7 +44,7 @@ export function ChangePasswordForm() {
           name="confirmation"
           type="password"
           required
-          minLength={12}
+          minLength={6}
           maxLength={128}
           autoComplete="new-password"
           className="w-full px-4 py-3 rounded-md border border-gray-300 outline-none focus:ring-2 focus:ring-[#1e3a8a] text-gray-900 bg-gray-50"
@@ -47,7 +52,7 @@ export function ChangePasswordForm() {
       </div>
 
       <p className="text-sm text-gray-600">
-        Use 12 o más caracteres e incluya mayúscula, minúscula, número y símbolo.
+        La contraseña debe tener al menos 6 caracteres. No se exige una combinación específica de letras, números o símbolos.
       </p>
 
       {state.message && (
