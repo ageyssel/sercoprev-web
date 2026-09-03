@@ -33,12 +33,8 @@ function isValidChileanRut(value: string) {
   return verifier === expected
 }
 
-function isStrongTemporaryPassword(value: string) {
-  return value.length >= 12
-    && /[a-z]/.test(value)
-    && /[A-Z]/.test(value)
-    && /\d/.test(value)
-    && /[^A-Za-z0-9]/.test(value)
+function isValidTemporaryPassword(value: string) {
+  return value.length >= 6
 }
 
 function internalAuthEmail(rut: string) {
@@ -86,7 +82,7 @@ export async function crearClienteConRut(
     if (razonSocial.length < 2) return { status: 'error', message: 'Ingrese una razón social válida.' }
     if (!isValidChileanRut(rut)) return { status: 'error', message: 'El RUT ingresado no es válido.' }
     if (contactEmail && !EMAIL_PATTERN.test(contactEmail)) return { status: 'error', message: 'El correo de contacto no es válido.' }
-    if (!isStrongTemporaryPassword(password)) return { status: 'error', message: 'La contraseña temporal debe tener 12 caracteres e incluir mayúscula, minúscula, número y símbolo.' }
+    if (!isValidTemporaryPassword(password)) return { status: 'error', message: 'La contraseña temporal debe tener al menos 6 caracteres.' }
 
     const { data: existingCompany } = await adminClient.from('empresas').select('id').eq('rut', rut).limit(1).maybeSingle()
     if (existingCompany) return { status: 'error', message: 'Ya existe un cliente registrado con ese RUT.' }
@@ -114,7 +110,6 @@ export async function crearClienteConRut(
       rut,
       razon_social: razonSocial,
       email_contacto: contactEmail || null,
-      estado_impuestos: 'Pendiente',
       es_admin: false,
       must_change_password: true,
     }).select('id').single()
