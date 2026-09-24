@@ -71,7 +71,7 @@ summary {
 }
 
 ::selection { background: rgba(207, 168, 75, 0.3); color: #10283d; }
-:focus-visible { outline: 3px solid rgba(23, 79, 122, 0.18); outline-offset: 2px; }
+:focus-visible { outline: 3px solid #174f7a; outline-offset: 2px; }
 
 .admin-shell {
   min-height: 100vh;
@@ -118,8 +118,7 @@ summary {
 .admin-shell main select:focus,
 .admin-shell main textarea:focus {
   border-color: var(--blue);
-  box-shadow: 0 0 0 4px rgba(23, 79, 122, 0.075);
-  outline: none;
+  box-shadow: 0 0 0 4px rgba(23, 79, 122, 0.35);
 }
 .admin-shell main input::placeholder,
 .admin-shell main textarea::placeholder { color: #9aa8b5; font-weight: 500; }

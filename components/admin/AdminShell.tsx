@@ -9,6 +9,12 @@ import { signOut } from '@/app/dashboard/actions'
 export function AdminShell({ children, adminName, canManageSettings }: { children: ReactNode; adminName: string; canManageSettings: boolean }) {
   return (
     <div className="admin-shell min-h-screen">
+      <a
+        href="#contenido"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-white focus:px-4 focus:py-3 focus:text-sm focus:font-bold focus:text-[#174f7a] focus:shadow-lg"
+      >
+        Ir al contenido
+      </a>
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-[256px] flex-col overflow-hidden border-r border-white/[0.055] bg-[linear-gradient(180deg,#10283d_0%,#0a1d2e_100%)] px-3.5 py-4.5 shadow-2xl shadow-[#0f2438]/10 lg:flex">
         <div className="px-2 py-1">
           <BrandLogo href="/admin" inverse />
@@ -70,7 +76,7 @@ export function AdminShell({ children, adminName, canManageSettings }: { childre
             </details>
           </div>
         </header>
-        <main className="min-h-screen px-4 py-5 sm:px-6 lg:px-7 lg:py-7 2xl:px-9">{children}</main>
+        <main id="contenido" tabIndex={-1} className="min-h-screen px-4 py-5 sm:px-6 lg:px-7 lg:py-7 2xl:px-9">{children}</main>
       </div>
     </div>
   )
