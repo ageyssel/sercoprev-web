@@ -46,6 +46,47 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund --silent
 
+      - name: Verify migration manifest coverage
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest='supabase/migrations/production-manifest.txt'
+          # Migraciones aplicadas a mano el 23 de julio de 2026, antes de que
+          # existiera el mecanismo de manifiesto. No se registran porque el
+          # workflow de despliegue las volvería a aplicar sobre la base viva.
+          pre_manifest=(
+            '202607210001_initial_secure_schema.sql'
+            '202607220001_operational_platform.sql'
+            '202607220002_operational_trigger_fix.sql'
+            '202607220003_billing_support.sql'
+          )
+          missing=0
+          for file in supabase/migrations/*.sql; do
+            name=$(basename "$file")
+            skip=0
+            for known in "${pre_manifest[@]}"; do
+              if [ "$name" = "$known" ]; then skip=1; break; fi
+            done
+            [ "$skip" -eq 1 ] && continue
+            if ! grep -qxF "supabase/migrations/$name" "$manifest"; then
+              echo "::error title=Migration not in manifest::$name no está en $manifest; el despliegue nunca la aplicaría."
+              missing=$((missing + 1))
+            fi
+          done
+          while IFS= read -r line; do
+            [ -z "$line" ] && continue
+            case "$line" in \#*) continue ;; esac
+            if [ ! -f "$line" ]; then
+              echo "::error title=Manifest entry missing::$line está en el manifiesto pero no existe en el árbol."
+              missing=$((missing + 1))
+            fi
+          done < "$manifest"
+          if [ "$missing" -gt 0 ]; then
+            echo "El manifiesto y las migraciones no coinciden ($missing problema(s))."
+            exit 1
+          fi
+          echo "Manifiesto consistente con supabase/migrations/."
+
       - name: Lint
         run: npm run lint -- --quiet
 
