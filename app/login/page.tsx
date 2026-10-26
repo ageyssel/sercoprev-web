@@ -12,7 +12,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   const params = await searchParams
 
   return (
-    <main className="min-h-screen bg-[#edf2f5] px-4 py-8 sm:px-6">
+    <main className="sercoprev-login min-h-screen px-4 py-8 sm:px-6">
       <div className="mx-auto grid min-h-[calc(100vh-4rem)] max-w-6xl overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-2xl shadow-[#0f2438]/10 lg:grid-cols-[.95fr_1.05fr]">
         <section className="relative hidden overflow-hidden bg-[#0f2438] p-10 text-white lg:flex lg:flex-col lg:justify-between">
           <div className="absolute -right-20 top-20 h-72 w-72 rounded-full bg-[#d6ad4d]/10 blur-3xl" />

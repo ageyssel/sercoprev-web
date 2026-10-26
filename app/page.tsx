@@ -27,10 +27,10 @@ export default async function HomePage() {
   const { config, services, team, reviews } = await loadCommercialSiteContent()
 
   return (
-    <div className="min-h-screen bg-[#f7f9fa] text-[#17324a]">
-      <header className="fixed inset-x-0 top-0 z-50 border-b border-white/10 bg-[#0b2235]/95 text-white shadow-lg backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-5 px-4 py-3 sm:px-6">
-          <BrandLogo inverse />
+    <div className="sercoprev-site min-h-screen">
+      <header className="sercoprev-header">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-5 px-4 py-2 sm:px-6">
+          <BrandLogo />
           <nav className="hidden items-center gap-1 lg:flex" aria-label="Navegación principal">
             <NavLink href="#servicios">Servicios</NavLink>
             <NavLink href="#equipo">Quienes Somos</NavLink>
@@ -60,34 +60,34 @@ export default async function HomePage() {
       </header>
 
       <main>
-        <section className="relative overflow-hidden bg-[#0b2235] px-4 pb-24 pt-36 text-white sm:px-6 lg:pb-32 lg:pt-44">
-          <div className="absolute -right-24 top-20 h-80 w-80 rounded-full bg-[#d6ad4d]/10 blur-3xl" />
-          <div className="absolute -left-24 bottom-0 h-96 w-96 rounded-full bg-[#2d76a8]/20 blur-3xl" />
-          <div className="relative mx-auto grid max-w-7xl items-center gap-14 lg:grid-cols-[1.08fr_.92fr]">
-            <div>
-              <span className="inline-flex items-center gap-2 rounded-full border border-[#d6ad4d]/30 bg-[#d6ad4d]/10 px-4 py-2 text-xs font-black uppercase tracking-[0.18em] text-[#f2d88e]">
-                <AppIcon name="shield" className="h-4 w-4" /> {config.hero_eyebrow}
-              </span>
-              <h1 className="mt-7 max-w-4xl text-4xl font-black leading-[1.08] tracking-[-0.04em] sm:text-5xl lg:text-7xl">{config.hero_title}</h1>
-              <p className="mt-7 max-w-2xl text-lg leading-8 text-slate-300 sm:text-xl">{config.hero_description}</p>
+        <section className="sercoprev-hero px-4 py-20 sm:px-6 lg:py-28">
+          <div className="sercoprev-hero-photo" aria-hidden="true">
+            {team.find((member) => /ren[eé].*morales/i.test(member.nombre))?.foto_url && (
+              <Image
+                src={team.find((member) => /ren[eé].*morales/i.test(member.nombre))!.foto_url!}
+                alt=""
+                fill
+                unoptimized
+                sizes="(max-width: 767px) 100vw, 70vw"
+                className="object-cover object-center"
+              />
+            )}
+          </div>
+          <div className="sercoprev-hero-wash" aria-hidden="true" />
+          <div className="relative z-10 mx-auto w-full max-w-7xl">
+            <div className="max-w-3xl">
+              <p className="sercoprev-hero-eyebrow mb-7 flex items-center gap-4"><span className="h-px w-10 bg-[#b49b73]" />{config.hero_eyebrow}</p>
+              <h1>{config.hero_title}</h1>
+              <p className="sercoprev-lead mt-7">{config.hero_description}</p>
               <div className="mt-9 flex flex-col gap-3 sm:flex-row">
-                <Link href="#contacto" className="inline-flex min-h-13 items-center justify-center gap-2 rounded-xl bg-[#d6ad4d] px-6 py-3.5 text-sm font-black text-[#0b2235] shadow-xl shadow-black/15 transition hover:-translate-y-0.5 hover:bg-[#e6c873]">
+                <Link href="#contacto" className="inline-flex min-h-13 items-center justify-center gap-3 px-6 py-3.5 text-sm">
                   Solicitar evaluación contable <AppIcon name="arrow-right" className="h-4 w-4" />
                 </Link>
-                <Link href="/login" className="inline-flex min-h-13 items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/5 px-6 py-3.5 text-sm font-black text-white transition hover:bg-white/10">
+                <Link href="/login" className="inline-flex min-h-13 items-center justify-center gap-3 px-6 py-3.5 text-sm">
                   Ingresar al portal <AppIcon name="arrow-right" className="h-4 w-4" />
                 </Link>
               </div>
-              <div className="mt-9 grid max-w-2xl grid-cols-2 gap-4 text-sm sm:grid-cols-4">
-                {['Atención personalizada', 'Portal privado', 'Control mensual', 'Servicio integral'].map((item) => (
-                  <div key={item} className="flex items-center gap-2 text-slate-300">
-                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-400/15 text-emerald-300"><AppIcon name="check" className="h-3.5 w-3.5" /></span>
-                    <span>{item}</span>
-                  </div>
-                ))}
-              </div>
             </div>
-            <PortalPreview />
           </div>
         </section>
 
@@ -103,7 +103,7 @@ export default async function HomePage() {
         <section className="px-4 py-24 sm:px-6" id="servicios">
           <div className="mx-auto max-w-7xl">
             <SectionIntro eyebrow={config.services_eyebrow} title={config.services_title} description={config.services_description} />
-            <div className="mt-14 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+            <div className="mt-14 grid gap-5 md:grid-cols-2 xl:grid-cols-5">
               {services.map((service) => <ServiceCard key={service.id} icon={service.icon} title={service.titulo} description={service.descripcion} items={service.items} />)}
             </div>
           </div>
