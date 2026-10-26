@@ -33,7 +33,7 @@ export default async function VerifyCodePage({ searchParams }: { searchParams: P
   }).format(new Date(challenge.expires_at))
 
   return (
-    <main className="min-h-screen bg-[#edf2f5] px-4 py-8 sm:px-6">
+    <main className="sercoprev-login min-h-screen px-4 py-8 sm:px-6">
       <div className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-5xl items-center justify-center">
         <section className="w-full max-w-lg overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-2xl shadow-[#0f2438]/10">
           <div className="bg-[#0f2438] px-7 py-6 text-white sm:px-9">

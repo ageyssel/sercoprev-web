@@ -1,4 +1,4 @@
-import Image from 'next/image'
+import { BrandLogo } from '@/components/BrandLogo'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/utils/supabase/server'
 import { ChangePasswordForm } from './ChangePasswordForm'
@@ -17,11 +17,9 @@ export default async function ChangePasswordPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f8fafc] flex items-center justify-center p-4">
+    <main className="sercoprev-login min-h-screen flex items-center justify-center p-4">
       <section className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-8 shadow-xl">
-        <div className="relative mx-auto mb-6 h-14 w-52">
-          <Image src="/logo.png" alt="SERCOPREV" fill className="object-contain" priority />
-        </div>
+        <div className="mb-6 flex justify-center"><BrandLogo /></div>
 
         <h1 className="text-2xl font-black text-[#0f172a] text-center">
           Proteja su cuenta
