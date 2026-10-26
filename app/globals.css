@@ -314,7 +314,7 @@ summary { user-select: none; }
 .sercoprev-site select { border-radius: 2px !important; }
 .sercoprev-login { min-height: 100vh; background: #f5f1e9; }
 .sercoprev-login > div { border-radius: 0; border-color: #ded7cd; box-shadow: 0 24px 65px rgba(20,38,61,.12); }
-.sercoprev-login section:first-child { background: #14263d; }
+.sercoprev-login-split > div > section:first-child { background: #14263d; }
 .sercoprev-login h1,
 .sercoprev-login h2 { font-family: var(--serco-serif); font-weight: 500; line-height: 1.14; letter-spacing: -.035em; }
 .sercoprev-login input,
@@ -390,7 +390,7 @@ summary { user-select: none; }
 }
 .sercoprev-site #servicios .sercoprev-office-photo { border-radius: 0; background: #ded7cc; }
 .sercoprev-site #servicios .sercoprev-office-photo img { object-fit: cover; object-position: center; }
-.sercoprev-login section:first-child {
+.sercoprev-login-split > div > section:first-child {
   background-image: linear-gradient(180deg, rgba(20,38,61,.92), rgba(20,38,61,.96)), url('/sercoprev-trabajo-contable.webp');
   background-size: cover;
   background-position: center;
