@@ -8,7 +8,7 @@ import { signOut } from '@/app/dashboard/actions'
 
 export function AdminShell({ children, adminName, canManageSettings }: { children: ReactNode; adminName: string; canManageSettings: boolean }) {
   return (
-    <div className="admin-shell min-h-screen">
+    <div className="admin-shell sercoprev-admin min-h-screen">
       <a
         href="#contenido"
         className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-white focus:px-4 focus:py-3 focus:text-sm focus:font-bold focus:text-[#174f7a] focus:shadow-lg"

@@ -5,7 +5,7 @@ export const metadata = { title: 'Política de privacidad | SERCOPREV' }
 
 export default function PrivacyPage() {
   return (
-    <main className="min-h-screen bg-[#f4f7f9] px-4 py-10 sm:px-6">
+    <main className="sercoprev-legal min-h-screen px-4 py-10 sm:px-6">
       <article className="mx-auto max-w-4xl rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-10">
         <BrandLogo />
         <p className="mt-10 text-xs font-black uppercase tracking-[0.18em] text-[#a47b24]">Información legal</p>

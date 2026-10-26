@@ -1,27 +1,27 @@
 @import "tailwindcss";
 
 @theme {
-  --color-primary: #174f7a;
-  --color-accent: #cfa84b;
-  --color-navy: #10283d;
-  --color-background: #f6f8fb;
+  --color-primary: #14263d;
+  --color-accent: #b49b73;
+  --color-navy: #14263d;
+  --color-background: #f5f1e9;
   --font-sans: var(--font-manrope), ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 :root {
-  --background: #f4f7fa;
-  --foreground: #1c3348;
-  --navy: #10283d;
-  --navy-soft: #173d59;
-  --blue: #174f7a;
-  --blue-soft: #edf4f9;
-  --gold: #cfa84b;
-  --gold-soft: #fbf6e8;
+  --background: #f5f1e9;
+  --foreground: #14263d;
+  --navy: #14263d;
+  --navy-soft: #243b4d;
+  --blue: #24465e;
+  --blue-soft: #f0ede6;
+  --gold: #b49b73;
+  --gold-soft: #f5f1e9;
   --surface: #ffffff;
-  --surface-muted: #f8fafc;
-  --border: #dce4eb;
-  --border-strong: #cbd6df;
-  --muted: #66788a;
+  --surface-muted: #f9f7f2;
+  --border: #e0dbd1;
+  --border-strong: #ccc5b9;
+  --muted: #686d73;
   --shadow-xs: 0 1px 2px rgba(15, 36, 56, 0.025);
   --shadow-sm: 0 6px 20px rgba(15, 36, 56, 0.05);
   --shadow-md: 0 16px 42px rgba(15, 36, 56, 0.075);
@@ -220,4 +220,150 @@ summary { user-select: none; }
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* Identidad editorial SERCOPREV — únicamente presentación visual. */
+.sercoprev-site,
+.sercoprev-login,
+.sercoprev-client,
+.sercoprev-legal {
+  --serco-ink: #14263d;
+  --serco-ivory: #f5f1e9;
+  --serco-bronze: #b49b73;
+  --serco-stone: #e0dbd1;
+  --serco-serif: var(--font-playfair), Georgia, "Times New Roman", serif;
+  color: var(--serco-ink);
+  background: var(--serco-ivory);
+}
+.sercoprev-site .sercoprev-header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: rgba(250, 248, 244, .98);
+  border-bottom: 1px solid #ddd7cc;
+  box-shadow: none;
+  color: #14263d;
+  backdrop-filter: blur(12px);
+}
+.sercoprev-site .sercoprev-header nav a { color: #14263d; font-weight: 650; letter-spacing: .015em; border-radius: 0; }
+.sercoprev-site .sercoprev-header nav a:hover { color: #947348; background: transparent; }
+.sercoprev-site .sercoprev-header nav a[href="/login"] { border: 1px solid #b49b73; background: #b49b73; color: #fff; padding-inline: 1.2rem; }
+.sercoprev-site .sercoprev-header nav a[href="#contacto"] { background: transparent; color: #14263d; border-bottom: 1px solid #b49b73; box-shadow: none; }
+.sercoprev-site .sercoprev-hero {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  min-height: 560px;
+  display: flex;
+  align-items: center;
+  background: #14263d;
+  color: white;
+}
+.sercoprev-hero-photo { position: absolute; inset: 0 0 0 35%; overflow: hidden; z-index: -2; }
+.sercoprev-hero-photo img { width: 100%; height: 100%; object-fit: cover; object-position: center 42%; }
+.sercoprev-hero-wash {
+  position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background: linear-gradient(90deg, #14263d 0%, #14263d 24%, rgba(20,38,61,.97) 34%, rgba(20,38,61,.75) 47%, rgba(20,38,61,.18) 73%, rgba(20,38,61,.03) 100%);
+}
+.sercoprev-hero .sercoprev-hero-eyebrow { text-transform: uppercase; font-size: .7rem; letter-spacing: .22em; color: #d9c8a8; font-weight: 600; }
+.sercoprev-hero h1 { font: 500 clamp(2.75rem, 5.3vw, 5.3rem)/1.09 var(--serco-serif); letter-spacing: -.04em; max-width: 750px; text-wrap: balance; }
+.sercoprev-hero h1::first-line { color: #fff; }
+.sercoprev-hero .sercoprev-lead { font-size: clamp(1rem,1.4vw,1.16rem); line-height: 1.8; max-width: 590px; color: #f0eee9; }
+.sercoprev-hero a { border-radius: 0; box-shadow: none; font-weight: 650; }
+.sercoprev-hero a[href="#contacto"] { color: #14263d; background: #b49b73; }
+.sercoprev-hero a[href="/login"] { border: 1px solid #b49b73; background: rgba(20,38,61,.4); }
+.sercoprev-site > main > section:not(.sercoprev-hero) { scroll-margin-top: 7rem; }
+.sercoprev-site #servicios { background: #f5f1e9; }
+.sercoprev-site #servicios h2,
+.sercoprev-site #equipo h2,
+.sercoprev-site #metodo h2,
+.sercoprev-site #portal h2,
+.sercoprev-site #contacto h2,
+.sercoprev-site main section h2 {
+  font-family: var(--serco-serif);
+  font-weight: 500;
+  letter-spacing: -.035em;
+  line-height: 1.17;
+}
+.sercoprev-site #servicios > div > div:last-child > * {
+  border-radius: 0;
+  border: 0;
+  border-left: 1px solid #d9d1c5;
+  background: transparent;
+  box-shadow: none;
+  padding: 1.6rem 1.4rem;
+}
+.sercoprev-site #servicios h3,
+.sercoprev-site #equipo h3,
+.sercoprev-site #metodo h3 { font-family: var(--serco-serif); font-weight: 500; color: #14263d; }
+.sercoprev-site #equipo { background: #fffdf9; }
+.sercoprev-site #equipo [class*="rounded"] { border-radius: 2px; box-shadow: none; }
+.sercoprev-site #metodo { background: #f5f1e9; }
+.sercoprev-site #portal { background: #ede8de; }
+.sercoprev-site #portal li { border: 1px solid #dcd2c2; border-radius: 2px; box-shadow: none; background: #fffdf9; }
+.sercoprev-site #portal li > span { border-radius: 2px; background: #14263d; }
+.sercoprev-site #contacto { background: #14263d; }
+.sercoprev-site #contacto [class*="rounded-3xl"] { border-radius: 2px; }
+.sercoprev-site footer { background: #fffdf9; border-color: #dfd6c8; }
+.sercoprev-site a:focus-visible,
+.sercoprev-login a:focus-visible,
+.sercoprev-client a:focus-visible { outline: 3px solid #b49b73; outline-offset: 3px; }
+.sercoprev-site button,
+.sercoprev-site input,
+.sercoprev-site textarea,
+.sercoprev-site select { border-radius: 2px !important; }
+.sercoprev-login { min-height: 100vh; background: #f5f1e9; }
+.sercoprev-login > div { border-radius: 0; border-color: #ded7cd; box-shadow: 0 24px 65px rgba(20,38,61,.12); }
+.sercoprev-login section:first-child { background: #14263d; }
+.sercoprev-login h1,
+.sercoprev-login h2 { font-family: var(--serco-serif); font-weight: 500; line-height: 1.14; letter-spacing: -.035em; }
+.sercoprev-login input,
+.sercoprev-login button,
+.sercoprev-login [class*="rounded"] { border-radius: 2px; }
+.sercoprev-login button[type="submit"] { background: #14263d; }
+.sercoprev-legal { min-height: 100vh; background: #f5f1e9; }
+.sercoprev-legal article { background: #fffdf9; border-radius: 0; border-color: #ded7cd; box-shadow: none; }
+.sercoprev-legal h1,
+.sercoprev-legal h2 { font-family: var(--serco-serif); font-weight: 500; letter-spacing: -.02em; }
+.sercoprev-admin.admin-shell { background: #f5f1e9; color: #14263d; }
+.sercoprev-admin aside { background: #14263d; border-color: rgba(255,255,255,.12); }
+.sercoprev-admin main h1,
+.sercoprev-admin main h2,
+.sercoprev-admin main h3 { font-family: var(--font-playfair), Georgia, serif; font-weight: 500; letter-spacing: -.025em; }
+.sercoprev-admin main [class*="rounded-3xl"],
+.sercoprev-admin main [class*="rounded-2xl"],
+.sercoprev-admin main [class*="rounded-xl"] { border-radius: 3px; }
+.sercoprev-admin main article[class*="bg-white"],
+.sercoprev-admin main section[class*="bg-white"] {
+  background: #fffdf9;
+  border-color: #ded7cd;
+  box-shadow: none;
+}
+.sercoprev-admin main thead th { background: #eeeae2; color: #40516a; border-color: #ded7cd; }
+.sercoprev-admin main tbody tr:hover { background: #f5f1e9; }
+.sercoprev-admin main input,
+.sercoprev-admin main select,
+.sercoprev-admin main textarea { background: #fffdf9; border-color: #d4cbbb; }
+.sercoprev-admin main [class*="text-3xl"], .sercoprev-admin main [class*="text-4xl"] { font-family: var(--font-playfair), Georgia, serif; }
+.sercoprev-admin aside nav a { border-radius: 2px; }
+.sercoprev-admin aside nav a[aria-current="page"] { background: #b49b73; color: #14263d; box-shadow: none; }
+.sercoprev-admin main [class*="shadow-xl"] { box-shadow: none; }
+.sercoprev-client { background: #f5f1e9; color: #14263d; min-height: 100vh; }
+.sercoprev-client header { background: #fffdf9; border-color: #ded7cd; }
+.sercoprev-client main h1,
+.sercoprev-client main h2,
+.sercoprev-client main h3 { font-family: var(--font-playfair), Georgia, serif; letter-spacing: -.025em; font-weight: 500; }
+.sercoprev-client main [class*="rounded-3xl"],
+.sercoprev-client main [class*="rounded-2xl"],
+.sercoprev-client main [class*="rounded-xl"] { border-radius: 3px; }
+.sercoprev-client main section[class*="bg-white"],
+.sercoprev-client main article[class*="bg-white"] { background: #fffdf9; border-color: #ded7cd; box-shadow: none; }
+.sercoprev-client main table th { background: #eeeae2; }
+.sercoprev-client main table td { font-variant-numeric: tabular-nums; }
+@media (max-width: 767px) {
+ .sercoprev-hero-photo { inset: 20% 0 0 0; opacity: .75; }
+ .sercoprev-hero-wash { background: linear-gradient(180deg, #14263d 0%, rgba(20,38,61,.96) 34%, rgba(20,38,61,.70) 70%, rgba(20,38,61,.6) 100%); }
+ .sercoprev-site .sercoprev-hero { min-height: 620px; align-items: flex-start; }
+ .sercoprev-site #servicios > div > div:last-child > * { border-left: 0; border-bottom: 1px solid #ded7cd; padding-inline: 0; }
+ .sercoprev-site .sercoprev-header [class*="rounded"] { border-radius: 2px; }
 }

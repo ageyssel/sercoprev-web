@@ -3,7 +3,7 @@ import { ClientPortalDock } from '@/components/client/ClientPortalDock'
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   return (
-    <div className="pb-24 lg:pb-28">
+    <div className="sercoprev-client pb-24 lg:pb-28">
       {children}
       <ClientPortalDock />
     </div>

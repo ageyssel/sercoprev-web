@@ -56,7 +56,7 @@ export default async function DashboardPage() {
   const canWrite = role !== 'Solo lectura'
 
   return (
-    <div className="min-h-screen bg-[#f4f7f9] text-[#17324a]">
+    <div className="sercoprev-client min-h-screen">
       <header className="border-b border-slate-200 bg-white"><div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6"><div className="flex items-center gap-4"><BrandLogo href="/dashboard" compact /><span className="hidden h-7 w-px bg-slate-200 sm:block" /><div><p className="text-xs font-black uppercase tracking-[0.16em] text-[#a47b24]">Portal de clientes</p><p className="text-sm font-bold text-slate-500">{displayName} · {role}</p></div></div><div className="flex items-center justify-between gap-3"><span className="max-w-[230px] truncate text-sm font-bold text-slate-600">RUT {empresa.rut}</span><form action={signOut}><button className="rounded-xl border border-slate-200 px-4 py-2.5 text-xs font-black text-slate-700 hover:bg-red-50 hover:text-red-700">Cerrar sesión</button></form></div></div></header>
 
       <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:py-10">
