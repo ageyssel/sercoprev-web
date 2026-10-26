@@ -12,8 +12,8 @@ export function BrandLogo({
 }) {
   return (
     <Link href={href} className="inline-flex items-center gap-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b49b73]" aria-label="SERCOPREV">
-      <span className={`relative block shrink-0 ${compact ? 'h-12 w-32' : 'h-16 w-44'} ${inverse ? 'bg-[#f5f1e9] p-1' : ''}`}>
-        <Image src="/logo.png" alt="SERCOPREV" fill priority className="object-contain object-center" />
+      <span className={`relative block shrink-0 ${compact ? 'h-14 w-32' : 'h-20 w-48'} ${inverse ? 'bg-white p-1' : ''}`}>
+        <Image src="/sercoprev-logo-oficial.webp" alt="SERCOPREV" fill priority className="object-contain object-center" />
       </span>
     </Link>
   )

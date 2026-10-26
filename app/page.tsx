@@ -62,16 +62,15 @@ export default async function HomePage() {
       <main>
         <section className="sercoprev-hero px-4 py-20 sm:px-6 lg:py-28">
           <div className="sercoprev-hero-photo" aria-hidden="true">
-            {team.find((member) => /ren[eé].*morales/i.test(member.nombre))?.foto_url && (
-              <Image
-                src={team.find((member) => /ren[eé].*morales/i.test(member.nombre))!.foto_url!}
-                alt=""
-                fill
-                unoptimized
-                sizes="(max-width: 767px) 100vw, 70vw"
-                className="object-cover object-center"
-              />
-            )}
+            <Image
+              src="/sercoprev-rene-oficina.webp"
+              alt="René en la oficina de SERCOPREV, fotografía original de la empresa"
+              fill
+              priority
+              unoptimized
+              sizes="(max-width: 767px) 100vw, 70vw"
+              className="object-cover object-center"
+            />
           </div>
           <div className="sercoprev-hero-wash" aria-hidden="true" />
           <div className="relative z-10 mx-auto w-full max-w-7xl">
@@ -102,8 +101,20 @@ export default async function HomePage() {
 
         <section className="px-4 py-24 sm:px-6" id="servicios">
           <div className="mx-auto max-w-7xl">
-            <SectionIntro eyebrow={config.services_eyebrow} title={config.services_title} description={config.services_description} />
-            <div className="mt-14 grid gap-5 md:grid-cols-2 xl:grid-cols-5">
+            <div className="grid items-center gap-10 lg:grid-cols-[.95fr_1.05fr]">
+              <SectionIntro eyebrow={config.services_eyebrow} title={config.services_title} description={config.services_description} align="left" />
+              <div className="sercoprev-office-photo relative aspect-[16/9] overflow-hidden border border-[#d8ccbc]">
+                <Image
+                  src="/sercoprev-trabajo-contable.webp"
+                  alt="Fotografía ilustrativa de libros, archivadores y documentación de trabajo contable"
+                  fill
+                  unoptimized
+                  sizes="(max-width: 1023px) 100vw, 50vw"
+                  className="object-cover"
+                />
+              </div>
+            </div>
+            <div className="mt-14 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
               {services.map((service) => <ServiceCard key={service.id} icon={service.icon} title={service.titulo} description={service.descripcion} items={service.items} />)}
             </div>
           </div>
@@ -250,7 +261,7 @@ function NavLink({ href, children }: { href: string; children: React.ReactNode }
 function MobileLink({ href, children }: { href: string; children: React.ReactNode }) { return <Link href={href} className="rounded-xl px-4 py-3 text-sm font-bold hover:bg-slate-100">{children}</Link> }
 function SectionIntro({ eyebrow, title, description, align = 'center' }: { eyebrow: string; title: string; description: string; align?: 'left' | 'center' }) { return <div className={align === 'center' ? 'mx-auto max-w-3xl text-center' : 'max-w-2xl'}><p className="text-xs font-black uppercase tracking-[0.2em] text-[#a47b24]">{eyebrow}</p><h2 className="mt-4 text-3xl font-black tracking-[-0.03em] text-[#0f2438] sm:text-5xl">{title}</h2><p className="mt-5 text-base leading-8 text-slate-600 sm:text-lg">{description}</p></div> }
 function ServiceCard({ icon, title, description, items }: { icon: AppIconName; title: string; description: string; items: string[] }) { return <article className="group rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_12px_35px_rgba(15,36,56,0.06)] transition hover:-translate-y-1 hover:border-[#134b78]/30 hover:shadow-xl"><span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#eaf3f9] text-[#134b78]"><AppIcon name={icon} className="h-6 w-6" /></span><h3 className="mt-6 text-xl font-black text-[#0f2438]">{title}</h3><p className="mt-3 text-sm leading-6 text-slate-600">{description}</p><ul className="mt-6 grid gap-3 border-t border-slate-100 pt-5 text-sm text-slate-700">{items.map((item) => <li key={item} className="flex items-start gap-2"><AppIcon name="check" className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />{item}</li>)}</ul></article> }
-function TeamCard({ member }: { member: CommercialTeamMember }) { return <article className="group rounded-3xl border border-slate-200 bg-[#f8fafb] p-6 text-center shadow-sm transition hover:-translate-y-1 hover:bg-white hover:shadow-xl"><Portrait name={member.nombre} src={/ren[eé].*morales/i.test(member.nombre) ? null : member.foto_url} alt={member.foto_alt || member.nombre} /><h3 className="mt-5 text-lg font-black text-[#0f2438]">{member.nombre}</h3><p className="mt-2 text-sm font-black leading-5 text-[#134b78]">{member.cargo}</p>{member.profesion && <p className="mt-1 text-xs font-bold uppercase tracking-[0.1em] text-[#a47b24]">{member.profesion}</p>}{member.descripcion && <p className="mt-4 text-sm leading-6 text-slate-600">{member.descripcion}</p>}</article> }
+function TeamCard({ member }: { member: CommercialTeamMember }) { return <article className="group rounded-3xl border border-slate-200 bg-[#f8fafb] p-6 text-center shadow-sm transition hover:-translate-y-1 hover:bg-white hover:shadow-xl"><Portrait name={member.nombre} src={/^ren[eé]\b/i.test(member.nombre) ? null : member.foto_url} alt={member.foto_alt || member.nombre} /><h3 className="mt-5 text-lg font-black text-[#0f2438]">{member.nombre}</h3><p className="mt-2 text-sm font-black leading-5 text-[#134b78]">{member.cargo}</p>{member.profesion && <p className="mt-1 text-xs font-bold uppercase tracking-[0.1em] text-[#a47b24]">{member.profesion}</p>}{member.descripcion && <p className="mt-4 text-sm leading-6 text-slate-600">{member.descripcion}</p>}</article> }
 function ReviewCard({ review }: { review: CommercialReview }) { return <article className="rounded-3xl border border-white/10 bg-white/5 p-7 shadow-xl"><div className="flex gap-1 text-[#e3bf63]" aria-label={`${review.calificacion} de 5 estrellas`}>{Array.from({ length: review.calificacion }, (_, index) => <span key={index} aria-hidden="true">★</span>)}</div><blockquote className="mt-5 text-base leading-8 text-slate-200">“{review.resena}”</blockquote><div className="mt-7 flex items-center gap-4 border-t border-white/10 pt-5"><Portrait name={review.nombre_cliente} src={review.foto_url} alt={review.foto_alt || review.nombre_cliente} small /><div><p className="font-black text-white">{review.nombre_cliente}</p><p className="mt-1 text-xs font-bold text-slate-400">{[review.cargo, review.empresa].filter(Boolean).join(' · ') || 'Cliente SERCOPREV'}</p></div></div></article> }
 function Portrait({ name, src, alt, small = false }: { name: string; src: string | null; alt: string; small?: boolean }) { const initials = name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase(); const size = small ? 52 : 132; return src ? <Image src={src} alt={alt} width={size} height={size} unoptimized className={`${small ? 'h-13 w-13' : 'mx-auto h-32 w-32'} rounded-full border-4 border-white object-cover shadow-lg ring-1 ring-slate-200/20`} /> : <span className={`${small ? 'h-13 w-13 text-sm' : 'mx-auto h-32 w-32 text-2xl'} flex items-center justify-center rounded-full bg-[#0f2438] font-black text-[#e3bf63] shadow-lg ring-1 ring-white/10`}>{initials}</span> }
 function TrustItem({ value, label }: { value: string; label: string }) { return <div className="text-center lg:text-left"><p className="text-2xl font-black text-[#0f2438] sm:text-3xl">{value}</p><p className="mt-1 text-xs font-bold uppercase tracking-[0.12em] text-slate-500">{label}</p></div> }

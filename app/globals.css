@@ -367,3 +367,53 @@ summary { user-select: none; }
  .sercoprev-site #servicios > div > div:last-child > * { border-left: 0; border-bottom: 1px solid #ded7cd; padding-inline: 0; }
  .sercoprev-site .sercoprev-header [class*="rounded"] { border-radius: 2px; }
 }
+
+/* Ajustes finales: archivos originales locales, sin imágenes externas efímeras. */
+.sercoprev-site .sercoprev-header { background: #fff; }
+.sercoprev-site .sercoprev-header details > summary {
+  border: 1px solid #cfc6b6;
+  color: #14263d;
+  border-radius: 2px;
+}
+.sercoprev-site .sercoprev-hero { background: #14263d; }
+.sercoprev-hero-photo { inset: 0 0 0 35%; }
+.sercoprev-hero-photo img { object-fit: cover; object-position: 52% 40%; }
+.sercoprev-hero-wash {
+  background: linear-gradient(90deg,
+    #14263d 0%,
+    #14263d 19%,
+    rgba(20,38,61,.98) 30%,
+    rgba(20,38,61,.88) 40%,
+    rgba(20,38,61,.54) 55%,
+    rgba(20,38,61,.10) 75%,
+    rgba(20,38,61,0) 100%);
+}
+.sercoprev-site #servicios .sercoprev-office-photo { border-radius: 0; background: #ded7cc; }
+.sercoprev-site #servicios .sercoprev-office-photo img { object-fit: cover; object-position: center; }
+.sercoprev-login section:first-child {
+  background-image: linear-gradient(180deg, rgba(20,38,61,.92), rgba(20,38,61,.96)), url('/sercoprev-trabajo-contable.webp');
+  background-size: cover;
+  background-position: center;
+}
+.sercoprev-client main > section:first-child {
+  background-image: linear-gradient(95deg, #14263d 0%, rgba(20,38,61,.98) 43%, rgba(20,38,61,.78) 100%), url('/sercoprev-trabajo-contable.webp');
+  background-size: cover;
+  background-position: center;
+}
+.sercoprev-admin aside {
+  background-image: linear-gradient(180deg, #14263d 0%, #14263d 65%, rgba(20,38,61,.90) 100%), url('/sercoprev-trabajo-contable.webp');
+  background-size: cover;
+  background-position: center;
+}
+@media(max-width: 767px) {
+  .sercoprev-hero-photo { inset: 0; }
+  .sercoprev-hero-photo img { object-position: 51% center; }
+  .sercoprev-hero-wash {
+    background: linear-gradient(180deg,
+      #14263d 0%,
+      rgba(20,38,61,.98) 24%,
+      rgba(20,38,61,.90) 46%,
+      rgba(20,38,61,.72) 68%,
+      rgba(20,38,61,.50) 100%);
+  }
+}
